@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Compass Leads</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Compass Leads">
+<meta name="theme-color" content="#1d3a66">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    /* Compass brand palette — keep these five in sync if the mascot ever gets reskinned */
+    --navy:#1d3a66; --navy-light:#2c4d80; --navy-pale:#EDF3F6; --navy-deep:#142844;
+    --brass:#7EDDD6; --brass-light:#A9EDE7; --brass-dark:#142844;
+    --teal:#4AA89A; --teal-pale:#E3F5F1;
+    --red:#B4432F; --red-pale:#FBEAE6;
+    --bg:#F4F8F8; --surface:#FFFFFF; --ink:#142844; --ink-soft:#5C7186; --border:#D9E6E3;
+    --radius:14px; --radius-sm:9px;
+    --shadow:0 2px 10px rgba(20,40,68,0.09); --shadow-lg:0 8px 28px rgba(20,40,68,0.18);
+    --tab-h:64px; --topbar-h:56px;
+  }
+  .compass-arm{transform-origin:60px 46px;animation:compass-wave 2s ease-in-out infinite}
+  .compass-figure{animation:compass-bob 2.8s ease-in-out infinite}
+  @keyframes compass-wave{0%,100%{transform:rotate(0deg)}25%{transform:rotate(-18deg)}50%{transform:rotate(4deg)}75%{transform:rotate(-10deg)}}
+  @keyframes compass-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  @media (prefers-reduced-motion: reduce){ .compass-arm,.compass-figure{animation:none} }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; height:100vh; overflow:hidden; display:flex; flex-direction:column;
+  }
+  button{font-family:inherit;}
+  button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
+  ::-webkit-scrollbar{width:6px;height:6px;} ::-webkit-scrollbar-thumb{background:#d9d4c6;border-radius:3px;}
+
+  #topbar{
+    height:calc(var(--topbar-h) + env(safe-area-inset-top)); padding-top:env(safe-area-inset-top);
+    flex:0 0 auto; background:var(--navy); color:#fff; display:flex; align-items:center; gap:10px;
+    padding-left:12px; padding-right:12px; position:relative; z-index:20;
+  }
+  #topbar .logo-mark{width:30px;height:32px;flex:0 0 auto;}
+  #topbar .brand{display:flex;flex-direction:column;line-height:1.1;flex:0 0 auto;}
+  #topbar .brand b{font-size:14.5px;letter-spacing:.2px;}
+  #topbar .brand span{font-size:10.5px;color:var(--brass-light);letter-spacing:.4px;text-transform:uppercase;}
+  #eventPill{margin-left:auto;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:7px 12px;font-size:12.5px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px;}
+  #syncDot{width:7px;height:7px;border-radius:50%;background:#5FBF95;flex:0 0 auto;transition:background .3s;}
+  #syncDot.stale{background:var(--brass-light);} #syncDot.err{background:var(--red);}
+
+  #app{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;}
+  .view{flex:1 1 auto;overflow-y:auto;display:none;padding:14px 14px calc(var(--tab-h) + 18px);-webkit-overflow-scrolling:touch;}
+  .view.active{display:block;}
+
+  h2.section-title{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft);margin:18px 0 8px;font-weight:700;}
+  h2.section-title:first-child{margin-top:2px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;margin-bottom:12px;}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:none;border-radius:11px;padding:12px 16px;font-size:15px;font-weight:600;cursor:pointer;transition:transform .06s ease, filter .15s ease;-webkit-tap-highlight-color:transparent;}
+  .btn:active{transform:scale(.97);}
+  .btn-primary{background:var(--brass);color:var(--brass-dark);}
+  .btn-primary:hover{filter:brightness(1.05);}
+  .btn-primary:disabled{background:#E4DFCF;color:#9C978A;cursor:not-allowed;}
+  .btn-dark{background:var(--navy);color:#fff;}
+  .btn-outline{background:transparent;border:1.5px solid var(--border);color:var(--ink);}
+  .btn-teal{background:var(--teal);color:#fff;}
+  .btn-danger{background:var(--red-pale);color:var(--red);}
+  .btn-block{width:100%;}
+  .btn-sm{padding:9px 12px;font-size:13px;border-radius:9px;}
+  .btn-icon{width:44px;height:44px;padding:0;border-radius:50%;}
+
+  .row{display:flex;gap:10px;} .row.wrap{flex-wrap:wrap;} .row.between{justify-content:space-between;align-items:center;}
+  .grow{flex:1 1 auto;min-width:0;}
+
+  label.field-label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-soft);margin:0 0 5px;text-transform:uppercase;letter-spacing:.3px;}
+  input[type=text],input[type=email],input[type=tel],input[type=password],input[type=date],textarea,select{
+    width:100%;border:1.5px solid var(--border);border-radius:10px;padding:11px 12px;font-size:15.5px;background:#fff;color:var(--ink);
+  }
+  textarea{resize:vertical;min-height:80px;font-family:inherit;}
+  .field{margin-bottom:12px;} .field.missing input{border-color:var(--red);background:var(--red-pale);}
+  .hint{font-size:12px;color:var(--ink-soft);margin-top:4px;}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;}
+
+  .badge{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;}
+  .badge-teal{background:var(--teal-pale);color:var(--teal);} .badge-red{background:var(--red-pale);color:var(--red);}
+  .badge-brass{background:var(--brass-light);color:var(--brass-dark);} .badge-gray{background:#E7EEED;color:var(--ink-soft);}
+
+  #tabbar{height:calc(var(--tab-h) + env(safe-area-inset-bottom));flex:0 0 auto;background:#fff;border-top:1px solid var(--border);display:flex;position:relative;z-index:20;padding-bottom:env(safe-area-inset-bottom);}
+  .tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--ink-soft);font-size:10.5px;font-weight:600;cursor:pointer;position:relative;}
+  .tab-btn svg{width:21px;height:21px;}
+  .tab-btn.active{color:var(--navy);}
+  .tab-btn .tcount{position:absolute;top:2px;right:20%;background:var(--red);color:#fff;font-size:9.5px;font-weight:800;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;}
+
+  .scan-wrap{position:relative;border-radius:var(--radius);overflow:hidden;background:#000;box-shadow:var(--shadow-lg);aspect-ratio:3/4;max-height:50vh;}
+  .scan-wrap video{width:100%;height:100%;object-fit:cover;display:block;}
+  .scan-frame{position:absolute;inset:12%;border:3px solid rgba(255,255,255,.85);border-radius:18px;box-shadow:0 0 0 2000px rgba(0,0,0,.28);pointer-events:none;}
+  .scan-status{position:absolute;bottom:10px;left:10px;right:10px;background:rgba(22,35,63,.72);color:#fff;padding:8px 10px;border-radius:9px;font-size:12.5px;text-align:center;}
+  .cam-off{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff;height:100%;text-align:center;padding:20px;}
+  .cam-off svg{width:40px;height:40px;opacity:.7;}
+
+  .worker-strip{font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:6px;margin:10px 2px 2px;}
+  .worker-strip button{background:none;border:none;color:var(--teal);font-weight:700;font-size:12.5px;cursor:pointer;padding:0;}
+
+  .match-chip{display:flex;align-items:center;gap:10px;background:var(--teal-pale);border:1px solid #C7E3D9;border-radius:12px;padding:10px 12px;margin-bottom:12px;}
+  .match-chip .txt{flex:1;font-size:13.5px;} .match-chip .txt b{display:block;color:var(--navy);font-size:14px;}
+  .alert-box{background:var(--red-pale);border:1px solid #ECC9C0;color:#7A2C1C;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px;display:flex;gap:8px;align-items:flex-start;}
+  .alert-box svg{width:18px;height:18px;flex:0 0 auto;margin-top:1px;}
+
+  .lead-item{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;}
+  .lead-item .top{display:flex;justify-content:space-between;gap:8px;}
+  .lead-item .name{font-weight:700;font-size:15px;}
+  .lead-item .meta{font-size:12.5px;color:var(--ink-soft);margin-top:2px;}
+  .lead-item .actions{display:flex;gap:6px;margin-top:8px;}
+
+  .empty-state{text-align:center;padding:40px 16px;color:var(--ink-soft);}
+  .empty-state svg{width:56px;height:56px;opacity:.5;margin-bottom:10px;}
+  .empty-state b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px;}
+
+  table.at-table{width:100%;border-collapse:collapse;font-size:13px;}
+  table.at-table th{text-align:left;font-size:11px;text-transform:uppercase;color:var(--ink-soft);padding:6px 6px;border-bottom:1.5px solid var(--border);}
+  table.at-table td{padding:6px 6px;border-bottom:1px solid var(--border);}
+  table.at-table input{border:1px solid transparent;padding:5px 6px;font-size:13px;border-radius:6px;background:transparent;width:100%;}
+  table.at-table input:focus{border-color:var(--border);background:#fff;}
+  table.at-table tr:hover td{background:#FAF9F5;}
+
+  .modal-backdrop{position:fixed;inset:0;background:rgba(22,35,63,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+  .modal-box{background:#fff;border-radius:18px;padding:22px;max-width:340px;width:100%;box-shadow:var(--shadow-lg);text-align:center;}
+  .modal-box .logo-mark{width:52px;height:52px;margin:0 auto 12px;}
+  .modal-box h3{margin:0 0 6px;font-size:18px;color:var(--navy);}
+  .modal-box p{margin:0 0 16px;font-size:13.5px;color:var(--ink-soft);line-height:1.4;}
+
+  .toast{position:fixed;bottom:calc(var(--tab-h) + 14px);left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 18px;border-radius:11px;font-size:13.5px;box-shadow:var(--shadow-lg);z-index:200;opacity:0;transition:opacity .25s ease, transform .25s ease;pointer-events:none;max-width:88%;text-align:center;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+
+  .overlay-loading{position:absolute;inset:0;background:rgba(22,35,63,.85);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:var(--radius);z-index:5;}
+  .spin{width:34px;height:34px;animation:spin 1.1s linear infinite;} @keyframes spin{to{transform:rotate(360deg);}}
+
+  #photoInput{display:none;}
+  #view-setup .card p{font-size:13px;color:var(--ink-soft);line-height:1.5;margin:0 0 10px;}
+  #view-setup ol{font-size:13px;color:var(--ink-soft);line-height:1.6;padding-left:20px;margin:0 0 10px;}
+  #setupGate{position:fixed;inset:0;background:var(--bg);z-index:300;overflow-y:auto;display:none;padding:20px 16px calc(20px + env(safe-area-inset-bottom));}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <svg class="logo-mark" viewBox="0 0 120 130" xmlns="http://www.w3.org/2000/svg">
+    <g>
+      <path d="M60 20c22 0 36 16 36 40 0 26-14 44-36 44S24 86 24 60c0-24 14-40 36-40z" fill="#1d3a66"/>
+      <circle cx="60" cy="70" r="13" fill="#4AA89A"/>
+      <path d="M60 62l2.6 5.4 5.9.8-4.3 4.1 1 5.9L60 75.4l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#fff"/>
+      <circle cx="60" cy="34" r="22" fill="#7EDDD6"/>
+      <circle cx="52" cy="33" r="3.2" fill="#142844"/>
+      <circle cx="68" cy="33" r="3.2" fill="#142844"/>
+      <path d="M50 41c4 4 16 4 20 0" stroke="#142844" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <path d="M88 66c8-2 14-10 14-18" stroke="#1d3a66" stroke-width="10" fill="none" stroke-linecap="round"/>
+      <circle cx="102" cy="48" r="7" fill="#7EDDD6"/>
+      <path d="M32 66c-6-1-10-6-11-13" stroke="#1d3a66" stroke-width="10" fill="none" stroke-linecap="round"/>
+      <circle cx="21" cy="53" r="7" fill="#7EDDD6"/>
+    </g>
+  </svg>
+  <div class="brand"><b>Compass Leads</b><span id="workerLabelTop">—</span></div>
+  <div id="eventPill" onclick="switchTab('events')"><span id="syncDot"></span><span id="eventPillText">No event set</span></div>
+</div>
+
+<div id="app">
+
+  <div class="view active" id="view-scan">
+    <div class="worker-strip">Signed in as <b id="workerLabel">—</b> <button onclick="promptWorkerName(true)">change</button></div>
+    <div id="scanStage">
+      <div class="scan-wrap" id="scanWrap">
+        <video id="camVideo" playsinline muted></video>
+        <div class="scan-frame" id="scanFrame"></div>
+        <div class="scan-status" id="scanStatus">Point camera at badge QR code</div>
+      </div>
+    </div>
+    <div class="row wrap" style="margin-top:14px;">
+      <button class="btn btn-outline grow" id="btnToggleCam">Stop camera</button>
+      <button class="btn btn-dark grow" id="btnTakePhoto">No QR — take photo</button>
+    </div>
+    <input type="file" id="photoInput" accept="image/*" capture="environment">
+    <div class="hint" style="margin-top:10px;text-align:center;" id="syncHint">
+      Live sync assumes solid venue wifi. Leads save instantly and sync to the whole team within a second or two.
+    </div>
+    <div id="manualAddWrap" style="margin-top:14px;">
+      <button class="btn btn-outline btn-block" onclick="openReview(null)">+ Enter a lead manually</button>
+    </div>
+  </div>
+
+  <div class="view" id="view-review">
+    <div class="row between" style="margin-bottom:6px;">
+      <button class="btn-icon btn-outline" onclick="closeReview()" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 19l-7-7 7-7"/></svg></button>
+      <div style="font-weight:700;font-size:15px;">Review lead</div>
+      <div style="width:44px;"></div>
+    </div>
+    <div id="matchArea"></div>
+    <div id="contactAlertArea"></div>
+    <div class="card">
+      <div class="field"><label class="field-label">Full name *</label><input type="text" id="f_name" placeholder="Jordan Rivera"></div>
+      <div class="row">
+        <div class="field grow"><label class="field-label">Company / Agency</label><input type="text" id="f_company" placeholder="County Probation Dept."></div>
+        <div class="field grow"><label class="field-label">Title</label><input type="text" id="f_title" placeholder="Program Director"></div>
+      </div>
+      <div class="field" id="f_email_wrap"><label class="field-label">Email</label><input type="email" id="f_email" placeholder="name@agency.gov"></div>
+      <div class="field" id="f_phone_wrap"><label class="field-label">Phone</label><input type="tel" id="f_phone" placeholder="(555) 555-0100"></div>
+      <div class="field"><label class="field-label">Notes</label><textarea id="f_notes" placeholder="Interested in Benchmark integration…"></textarea></div>
+      <div class="hint" id="f_source">Source: manual entry</div>
+    </div>
+    <button class="btn btn-primary btn-block" id="btnSaveLead" style="font-size:16px;padding:14px;">Save lead</button>
+    <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="closeReview()">Cancel</button>
+  </div>
+
+  <div class="view" id="view-leads">
+    <h2 class="section-title">Leads for this event</h2>
+    <div class="card" style="padding:10px 12px;"><input type="text" id="leadSearch" placeholder="Search leads by name or company…"></div>
+    <div class="row wrap" style="margin:8px 0 14px;">
+      <span class="badge badge-brass" id="leadCountBadge">0 leads</span>
+      <span class="badge badge-red" id="leadMissingBadge" style="display:none;">0 missing contact</span>
+      <span class="hint" id="lastSyncedLabel" style="margin-left:auto;"></span>
+    </div>
+    <button class="btn btn-teal btn-block" id="btnExportCsv" style="margin-bottom:14px;">Export Salesforce CSV</button>
+    <div id="leadsListWrap"></div>
+  </div>
+
+  <div class="view" id="view-attendees">
+    <h2 class="section-title">Attendee list</h2>
+    <div class="card">
+      <p style="margin:0 0 10px;font-size:13px;color:var(--ink-soft);">Upload the conference attendee list (CSV — name, email, phone, company columns, any order). Scanned badges are matched against this to fill in missing contact info.</p>
+      <input type="file" id="attendeeCsvInput" accept=".csv,text/csv" style="margin-bottom:8px;">
+      <div class="row">
+        <button class="btn btn-outline grow btn-sm" onclick="document.getElementById('attendeeCsvInput').click()">Upload CSV</button>
+        <button class="btn btn-outline grow btn-sm" onclick="addAttendeeRow()">+ Add row</button>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto;">
+      <table class="at-table" id="attendeeTable">
+        <thead><tr><th>Name</th><th>Company</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+        <tbody id="attendeeTbody"></tbody>
+      </table>
+      <div class="empty-state" id="attendeeEmpty" style="display:none;padding:24px 8px;"><b>No attendee list yet</b>Upload a CSV above, or scans will just use what's on the badge.</div>
+    </div>
+    <button class="btn btn-primary btn-block" id="btnSaveAttendees">Save attendee list</button>
+  </div>
+
+  <div class="view" id="view-events">
+    <h2 class="section-title">Events</h2>
+    <div id="eventsListWrap"></div>
+    <div class="card">
+      <div class="field"><label class="field-label">New event name</label><input type="text" id="newEventName" placeholder="APPA 2026 Annual Conference"></div>
+      <button class="btn btn-primary btn-block" id="btnAddEvent">+ Add event</button>
+    </div>
+  </div>
+
+  <div class="view" id="view-setup">
+    <h2 class="section-title">Connection</h2>
+    <div class="card">
+      <p>Compass Leads stores everything in a Firestore database (Google's free-tier cloud database) so up to ~10 phones can read and write the same leads live. Paste your Firebase project config below — see the README that came with this app for the one-time project setup steps.</p>
+      <div class="field"><label class="field-label">Firebase config (paste the whole object)</label>
+        <textarea id="setupFirebaseConfig" class="mono" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...", ...}'></textarea>
+      </div>
+      <button class="btn btn-primary btn-block" id="btnSaveFirebaseConfig">Save & connect</button>
+      <div class="hint" id="firebaseStatusLine" style="margin-top:8px;"></div>
+    </div>
+    <h2 class="section-title">Badge photo reading (optional)</h2>
+    <div class="card">
+      <p>If a badge has no QR code, "No QR — take photo" can have Claude read the name/company/email off the photo automatically. This calls the Anthropic API directly from the phone using your own API key — it never touches Claude.ai. Leave blank to skip this and just type badges in manually.</p>
+      <div class="field"><label class="field-label">Anthropic API key</label><input type="password" id="setupApiKey" placeholder="sk-ant-…"></div>
+      <button class="btn btn-outline btn-block" id="btnSaveApiKey">Save key</button>
+    </div>
+    <div class="card" style="font-size:13px;color:var(--ink-soft);line-height:1.5;">
+      Colors and the Compass mark here are a placeholder pass — swap in your exact kiosk palette / logo any time and I can rebuild the theme around it.
+    </div>
+  </div>
+
+</div>
+
+<div id="tabbar">
+  <button class="tab-btn active" data-tab="scan" onclick="switchTab('scan')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/><circle cx="12" cy="13.5" r="3"/></svg>
+    Scan
+  </button>
+  <button class="tab-btn" data-tab="leads" onclick="switchTab('leads')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
+    Leads<span class="tcount" id="tabCountLeads" style="display:none;">0</span>
+  </button>
+  <button class="tab-btn" data-tab="attendees" onclick="switchTab('attendees')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-4 3-6.5 6.5-6.5s6.5 2.5 6.5 6.5"/><circle cx="18" cy="8.5" r="2.4"/><path d="M15.5 13.6c2.6.3 5 2.6 5 6.4"/></svg>
+    Attendees
+  </button>
+  <button class="tab-btn" data-tab="events" onclick="switchTab('events')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7l1.8 4.2L18 13l-4.2 1.8L12 19l-1.8-4.2L6 13l4.2-1.8z"/></svg>
+    Events
+  </button>
+  <button class="tab-btn" data-tab="setup" onclick="switchTab('setup')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    Setup
+  </button>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- Blocking setup gate shown until a Firebase config is saved -->
+<div id="setupGate">
+  <div style="max-width:420px;margin:30px auto;">
+    <svg viewBox="0 0 120 130" style="width:58px;height:63px;display:block;margin:0 auto 14px;">
+      <g class="compass-figure">
+        <ellipse cx="60" cy="120" rx="30" ry="6" fill="#000" opacity="0.15"/>
+        <path d="M60 20c22 0 36 16 36 40 0 26-14 44-36 44S24 86 24 60c0-24 14-40 36-40z" fill="#1d3a66"/>
+        <circle cx="60" cy="70" r="13" fill="#4AA89A"/>
+        <path d="M60 62l2.6 5.4 5.9.8-4.3 4.1 1 5.9L60 75.4l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#fff"/>
+        <circle cx="60" cy="34" r="22" fill="#7EDDD6"/>
+        <circle cx="52" cy="33" r="3.2" fill="#142844"/>
+        <circle cx="68" cy="33" r="3.2" fill="#142844"/>
+        <path d="M50 41c4 4 16 4 20 0" stroke="#142844" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <g class="compass-arm"><path d="M88 66c8-2 14-10 14-18" stroke="#1d3a66" stroke-width="10" fill="none" stroke-linecap="round"/><circle cx="102" cy="48" r="7" fill="#7EDDD6"/></g>
+        <path d="M32 66c-6-1-10-6-11-13" stroke="#1d3a66" stroke-width="10" fill="none" stroke-linecap="round"/>
+        <circle cx="21" cy="53" r="7" fill="#7EDDD6"/>
+      </g>
+    </svg>
+    <h2 style="text-align:center;color:var(--navy);margin:0 0 6px;">Connect Compass Leads</h2>
+    <p style="text-align:center;color:var(--ink-soft);font-size:13.5px;margin:0 0 18px;">
+      This app needs a Firestore database to share leads across every phone at the booth. Follow the README that came
+      with this file to create a free Firebase project (about 5 minutes), then paste the config below.
+    </p>
+    <div class="card">
+      <div class="field"><label class="field-label">Firebase config (paste the whole object)</label>
+        <textarea id="gateFirebaseConfig" class="mono" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...", ...}'></textarea>
+      </div>
+      <button class="btn btn-primary btn-block" id="btnGateConnect">Connect</button>
+      <div class="hint" id="gateStatusLine" style="margin-top:8px;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* =========================================================================
+   COMPASS LEADS — standalone booth lead-capture app
+   Data layer: Firestore (shared, cross-device, realtime).
+   Vision OCR: direct browser call to the Anthropic API using the user's own
+   API key (never touches Claude.ai / artifacts).
+   Runs as a normal static site — host it anywhere over HTTPS.
+   ========================================================================= */
+
+const LS_FIREBASE = 'compassleads.firebaseConfig';
+const LS_APIKEY   = 'compassleads.apiKey';
+const LS_WORKER   = 'compassleads.workerName';
+
+function uid(){ return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function norm(s){ return (s||'').toLowerCase().normalize('NFKD').replace(/[^\w\s]/g,'').replace(/\s+/g,' ').trim(); }
+function toast(msg, ms){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'), ms||2200); }
+function fmtTime(ts){ if(!ts) return ''; const d=new Date(ts); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
+function setSyncState(state){ document.getElementById('syncDot').className = state==='ok' ? '' : state; }
+
+const State = {
+  workerName: localStorage.getItem(LS_WORKER) || '',
+  db: null,
+  events: [],
+  activeEventId: null,
+  attendees: [],
+  leads: {},              // docId -> lead
+  qrScanner: null,
+  camAvailable: true,
+  lastSync: 0,
+  unsubLeads: null,
+  unsubAttendees: null,
+  unsubEvents: null,
+  unsubMeta: null,
+  pendingLead: null,
+};
+
+/* ---------- worker identity ---------- */
+function promptWorkerName(force){
+  if(State.workerName && !force){ return; }
+  const box = document.createElement('div');
+  box.className = 'modal-backdrop';
+  box.innerHTML = `
+    <div class="modal-box">
+      <svg class="logo-mark" viewBox="0 0 120 130" style="width:64px;height:70px;">
+        <g class="compass-figure">
+          <ellipse cx="60" cy="120" rx="30" ry="6" fill="#000" opacity="0.15"/>
+          <path d="M60 20c22 0 36 16 36 40 0 26-14 44-36 44S24 86 24 60c0-24 14-40 36-40z" fill="#1d3a66"/>
+          <circle cx="60" cy="70" r="13" fill="#4AA89A"/>
+          <path d="M60 62l2.6 5.4 5.9.8-4.3 4.1 1 5.9L60 75.4l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#fff"/>
+          <circle cx="60" cy="34" r="22" fill="#7EDDD6"/>
+          <circle cx="52" cy="33" r="3.2" fill="#142844"/>
+          <circle cx="68" cy="33" r="3.2" fill="#142844"/>
+          <path d="M50 41c4 4 16 4 20 0" stroke="#142844" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+          <g class="compass-arm"><path d="M88 66c8-2 14-10 14-18" stroke="#1d3a66" stroke-width="10" fill="none" stroke-linecap="round"/><circle cx="102" cy="48" r="7" fill="#7EDDD6"/></g>
+          <path d="M32 66c-6-1-10-6-11-13" stroke="#1d3a66" stroke-width="10" fill="none" stroke-linecap="round"/>
+          <circle cx="21" cy="53" r="7" fill="#7EDDD6"/>
+        </g>
+      </svg>
+      <h3>Who's scanning?</h3>
+      <p>Your name is attached to every lead you save, so the team knows who to follow up with. This is remembered on this phone.</p>
+      <input type="text" id="workerNameInput" placeholder="Your name" style="margin-bottom:12px;" value="${esc(State.workerName)}">
+      <button class="btn btn-primary btn-block" id="workerNameOk">Start scanning</button>
+    </div>`;
+  document.body.appendChild(box);
+  const input = box.querySelector('#workerNameInput');
+  setTimeout(()=>input.focus(), 50);
+  function commit(){
+    const v = input.value.trim();
+    if(!v){ input.style.borderColor = 'var(--red)'; return; }
+    State.workerName = v;
+    localStorage.setItem(LS_WORKER, v);
+    document.getElementById('workerLabel').textContent = v;
+    document.getElementById('workerLabelTop').textContent = v;
+    box.remove();
+  }
+  box.querySelector('#workerNameOk').onclick = commit;
+  input.addEventListener('keydown', e => { if(e.key==='Enter') commit(); });
+}
+
+/* ---------- tabs ---------- */
+function switchTab(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  if(name === 'scan') startCamera(); else stopCamera();
+  if(name === 'leads') renderLeadsList();
+  if(name === 'attendees') renderAttendeeTable();
+  if(name === 'events') renderEventsList();
+  if(name === 'setup') prefillSetupView();
+}
+function switchViewOnly(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+}
+
+/* ---------- Firebase bootstrap ---------- */
+function prefillSetupView(){
+  const cfg = localStorage.getItem(LS_FIREBASE);
+  if(cfg) document.getElementById('setupFirebaseConfig').value = cfg;
+  const key = localStorage.getItem(LS_APIKEY);
+  document.getElementById('firebaseStatusLine').textContent = State.db ? 'Connected.' : 'Not connected.';
+  if(key) document.getElementById('setupApiKey').placeholder = '•••••••••••••••• (saved — paste to replace)';
+}
+function parseFirebaseConfigInput(raw){
+  raw = raw.trim();
+  if(!raw) return null;
+  // tolerate people pasting the `const firebaseConfig = {...};` snippet from the console
+  const braceStart = raw.indexOf('{');
+  const braceEnd = raw.lastIndexOf('}');
+  if(braceStart >= 0 && braceEnd > braceStart) raw = raw.slice(braceStart, braceEnd+1);
+  try{ return JSON.parse(raw); }catch(e){}
+  try{ return Function('"use strict";return (' + raw + ')')(); }catch(e){ return null; }
+}
+function connectFirebase(config, statusEl){
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(config);
+    State.db = firebase.firestore();
+    if(statusEl) statusEl.textContent = 'Connected to ' + (config.projectId || 'Firebase') + '.';
+    setSyncState('ok');
+    return true;
+  }catch(err){
+    console.error(err);
+    if(statusEl) statusEl.textContent = 'Could not connect — check the config and try again.';
+    setSyncState('err');
+    return false;
+  }
+}
+document.getElementById('btnGateConnect').onclick = () => {
+  const el = document.getElementById('gateFirebaseConfig');
+  const status = document.getElementById('gateStatusLine');
+  const cfg = parseFirebaseConfigInput(el.value);
+  if(!cfg || !cfg.projectId){ status.textContent = 'That doesn\'t look like a valid Firebase config — check the README.'; return; }
+  if(connectFirebase(cfg, status)){
+    localStorage.setItem(LS_FIREBASE, JSON.stringify(cfg));
+    document.getElementById('setupGate').style.display = 'none';
+    boot();
+  }
+};
+document.getElementById('btnSaveFirebaseConfig').onclick = () => {
+  const el = document.getElementById('setupFirebaseConfig');
+  const status = document.getElementById('firebaseStatusLine');
+  const cfg = parseFirebaseConfigInput(el.value);
+  if(!cfg || !cfg.projectId){ status.textContent = 'That doesn\'t look like a valid Firebase config.'; return; }
+  // tear down old listeners before reconnecting to a (possibly different) project
+  [State.unsubLeads, State.unsubAttendees, State.unsubEvents, State.unsubMeta].forEach(u => { if(u) try{u();}catch(e){} });
+  if(connectFirebase(cfg, status)){
+    localStorage.setItem(LS_FIREBASE, JSON.stringify(cfg));
+    boot();
+  }
+};
+document.getElementById('btnSaveApiKey').onclick = () => {
+  const v = document.getElementById('setupApiKey').value.trim();
+  if(v){ localStorage.setItem(LS_APIKEY, v); toast('API key saved on this phone'); }
+  else{ localStorage.removeItem(LS_APIKEY); toast('API key cleared'); }
+  document.getElementById('setupApiKey').value = '';
+  prefillSetupView();
+};
+
+/* ---------- events ---------- */
+function loadEventsAndMeta(){
+  if(State.unsubEvents) State.unsubEvents();
+  State.unsubEvents = State.db.collection('events').orderBy('createdAt','desc').onSnapshot(snap => {
+    State.events = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
+    updateEventPill();
+    renderEventsList();
+  }, err => console.error('events snapshot error', err));
+
+  if(State.unsubMeta) State.unsubMeta();
+  State.unsubMeta = State.db.collection('meta').doc('shared').onSnapshot(doc => {
+    const data = doc.exists ? doc.data() : {};
+    const newActive = data.activeEventId || null;
+    if(newActive !== State.activeEventId){
+      State.activeEventId = newActive;
+      updateEventPill();
+      subscribeToActiveEvent();
+    }
+  }, err => console.error('meta snapshot error', err));
+}
+async function setActiveEvent(id){
+  await State.db.collection('meta').doc('shared').set({activeEventId:id}, {merge:true});
+  // onSnapshot above will pick up the change and re-subscribe
+}
+function updateEventPill(){
+  const ev = State.events.find(e=>e.id===State.activeEventId);
+  document.getElementById('eventPillText').textContent = ev ? ev.name : 'No event set';
+}
+function renderEventsList(){
+  const wrap = document.getElementById('eventsListWrap');
+  if(!State.events.length){
+    wrap.innerHTML = `<div class="empty-state"><b>No events yet</b>Add one below — e.g. "APPA 2026" — then everything scanned this week ties to it.</div>`;
+    return;
+  }
+  wrap.innerHTML = State.events.map(ev => `
+    <div class="card row between">
+      <div><div style="font-weight:700;">${esc(ev.name)}</div><div class="hint">Created ${fmtTime(ev.createdAt)}</div></div>
+      <div class="row">
+        ${ev.id===State.activeEventId ? `<span class="badge badge-teal">Active</span>` : `<button class="btn btn-outline btn-sm" onclick="setActiveEvent('${ev.id}')">Make active</button>`}
+        <button class="btn btn-danger btn-sm" onclick="deleteEvent('${ev.id}')">Delete</button>
+      </div>
+    </div>`).join('');
+}
+async function deleteEvent(id){
+  if(!confirm('Remove this event? Its leads and attendee list stay in Firestore but won\'t show up here.')) return;
+  await State.db.collection('events').doc(id).delete();
+  if(State.activeEventId === id) await setActiveEvent(null);
+}
+document.getElementById('btnAddEvent').onclick = async () => {
+  const input = document.getElementById('newEventName');
+  const name = input.value.trim();
+  if(!name){ input.focus(); return; }
+  const ref = await State.db.collection('events').add({name, createdAt: Date.now()});
+  input.value = '';
+  await setActiveEvent(ref.id);
+  toast('Event added and set active');
+};
+
+/* ---------- active-event subscriptions (leads + attendees) ---------- */
+function subscribeToActiveEvent(){
+  if(State.unsubLeads){ State.unsubLeads(); State.unsubLeads = null; }
+  if(State.unsubAttendees){ State.unsubAttendees(); State.unsubAttendees = null; }
+  State.leads = {};
+  State.attendees = [];
+  renderLeadsList(); renderAttendeeTable(); updateLeadTabCount();
+  if(!State.activeEventId) return;
+
+  State.unsubLeads = State.db.collection('events').doc(State.activeEventId).collection('leads')
+    .onSnapshot(snap => {
+      State.leads = {};
+      snap.forEach(d => { State.leads[d.id] = d.data(); });
+      State.lastSync = Date.now();
+      setSyncState('ok');
+      renderLeadsList();
+      updateLeadTabCount();
+    }, err => { console.error('leads snapshot error', err); setSyncState('err'); });
+
+  State.unsubAttendees = State.db.collection('events').doc(State.activeEventId).collection('attendees')
+    .onSnapshot(snap => {
+      State.attendees = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
+      renderAttendeeTable();
+    }, err => console.error('attendees snapshot error', err));
+}
+
+/* ---------- attendees ---------- */
+function renderAttendeeTable(){
+  const tbody = document.getElementById('attendeeTbody');
+  const empty = document.getElementById('attendeeEmpty');
+  if(!State.attendees.length){ tbody.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display = 'none';
+  tbody.innerHTML = State.attendees.map((a) => `
+    <tr>
+      <td><input type="text" value="${esc(a.name)}" onchange="updateAttendeeField('${a.id}','name',this.value)"></td>
+      <td><input type="text" value="${esc(a.company)}" onchange="updateAttendeeField('${a.id}','company',this.value)"></td>
+      <td><input type="email" value="${esc(a.email)}" onchange="updateAttendeeField('${a.id}','email',this.value)"></td>
+      <td><input type="tel" value="${esc(a.phone)}" onchange="updateAttendeeField('${a.id}','phone',this.value)"></td>
+      <td><button class="btn-icon btn-outline" style="width:32px;height:32px;" onclick="removeAttendeeRow('${a.id}')" aria-label="Remove">✕</button></td>
+    </tr>`).join('');
+}
+function updateAttendeeField(id, field, val){
+  const a = State.attendees.find(x=>x.id===id);
+  if(a) a[field] = val; // local edit; persisted when "Save attendee list" is tapped
+}
+async function removeAttendeeRow(id){
+  if(!State.activeEventId) return;
+  if(id.startsWith('local-')){
+    State.attendees = State.attendees.filter(a=>a.id!==id);
+    renderAttendeeTable();
+    return;
+  }
+  await State.db.collection('events').doc(State.activeEventId).collection('attendees').doc(id).delete();
+}
+function addAttendeeRow(){
+  State.attendees.push({id:'local-'+uid(), name:'', company:'', email:'', phone:''});
+  renderAttendeeTable();
+}
+document.getElementById('btnSaveAttendees').onclick = async () => {
+  if(!State.activeEventId){ toast('Add an event first'); return; }
+  const btn = document.getElementById('btnSaveAttendees');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const col = State.db.collection('events').doc(State.activeEventId).collection('attendees');
+    let batch = State.db.batch();
+    let ops = 0;
+    for(const a of State.attendees){
+      const ref = a.id.startsWith('local-') ? col.doc() : col.doc(a.id);
+      batch.set(ref, {name:a.name||'', company:a.company||'', email:a.email||'', phone:a.phone||''});
+      ops++;
+      if(ops >= 450){ await batch.commit(); batch = State.db.batch(); ops = 0; } // stay under Firestore's 500-op batch limit
+    }
+    if(ops>0) await batch.commit();
+    toast('Attendee list saved (' + State.attendees.length + ' people)');
+  }catch(err){ console.error(err); toast('Save failed — check connection'); }
+  btn.disabled = false; btn.textContent = 'Save attendee list';
+};
+document.getElementById('attendeeCsvInput').addEventListener('change', function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  Papa.parse(file, {
+    header: true, skipEmptyLines: true,
+    complete: function(res){
+      const pick = (row, keys) => {
+        for(const k of Object.keys(row)){
+          const lk = k.toLowerCase();
+          if(keys.some(want => lk.includes(want))) return (row[k]||'').trim();
+        }
+        return '';
+      };
+      const parsed = res.data.map(row => ({
+        id: 'local-'+uid(),
+        name: pick(row,['name']) || [pick(row,['first']), pick(row,['last'])].filter(Boolean).join(' '),
+        company: pick(row,['company','agency','organization']),
+        email: pick(row,['email']),
+        phone: pick(row,['phone','mobile','tel']),
+      })).filter(r => r.name);
+      if(!parsed.length){ toast('No rows found — check the CSV headers'); return; }
+      State.attendees = State.attendees.concat(parsed);
+      renderAttendeeTable();
+      toast('Loaded ' + parsed.length + ' attendees — tap Save to sync to the team');
+    },
+    error: function(){ toast('Could not read that CSV'); }
+  });
+  e.target.value = '';
+});
+
+/* ---------- attendee matching ---------- */
+function findAttendeeMatch(name, company){
+  if(!name) return null;
+  const n = norm(name);
+  if(!n) return null;
+  let best = null, bestScore = 0;
+  for(const a of State.attendees){
+    const an = norm(a.name);
+    if(!an) continue;
+    let score = 0;
+    if(an === n) score = 100;
+    else {
+      const nTokens = n.split(' ').filter(Boolean);
+      const anTokens = an.split(' ').filter(Boolean);
+      const overlap = nTokens.filter(t => anTokens.includes(t)).length;
+      if(overlap >= 2 && overlap === nTokens.length) score = 70;
+      else if(overlap >= 1 && (an.includes(n) || n.includes(an))) score = 55;
+    }
+    if(company && a.company && norm(company) === norm(a.company)) score += 10;
+    if(score > bestScore){ bestScore = score; best = a; }
+  }
+  if(best && bestScore >= 55) return {attendee: best, confidence: bestScore >= 100 ? 'exact' : 'likely'};
+  return null;
+}
+function findExistingLead(name, excludeKey){
+  const n = norm(name);
+  if(!n) return null;
+  for(const [key, l] of Object.entries(State.leads)){
+    if(key === excludeKey) continue;
+    if(norm(l.name) === n) return {key, lead: l};
+  }
+  return null;
+}
+
+/* ---------- leads: render ---------- */
+function allLeadsSorted(){
+  return Object.entries(State.leads).map(([key,lead]) => Object.assign({_key:key}, lead)).sort((a,b) => (b.savedAt||0)-(a.savedAt||0));
+}
+function updateLeadTabCount(){
+  const n = Object.keys(State.leads).length;
+  const el = document.getElementById('tabCountLeads');
+  if(n>0){ el.style.display='flex'; el.textContent = n>99?'99+':n; } else { el.style.display='none'; }
+}
+function renderLeadsList(){
+  const wrap = document.getElementById('leadsListWrap');
+  const q = norm(document.getElementById('leadSearch').value);
+  let leads = allLeadsSorted();
+  const missing = leads.filter(l => !l.email && !l.phone).length;
+  document.getElementById('leadCountBadge').textContent = leads.length + (leads.length===1?' lead':' leads');
+  const missingBadge = document.getElementById('leadMissingBadge');
+  if(missing>0){ missingBadge.style.display='inline-flex'; missingBadge.textContent = missing + ' missing contact'; }
+  else missingBadge.style.display = 'none';
+  document.getElementById('lastSyncedLabel').textContent = State.lastSync ? ('synced ' + fmtTime(State.lastSync)) : '';
+  if(q) leads = leads.filter(l => norm(l.name).includes(q) || norm(l.company).includes(q));
+  if(!leads.length){
+    wrap.innerHTML = `<div class="empty-state"><b>No leads yet</b>${State.activeEventId ? 'Scan a badge from the Scan tab to add the first one.' : 'Set an active event first.'}</div>`;
+    return;
+  }
+  wrap.innerHTML = leads.map(l => `
+    <div class="lead-item">
+      <div class="top">
+        <div><div class="name">${esc(l.name)||'(no name)'}</div><div class="meta">${esc(l.company)||''}${l.title? ' · '+esc(l.title):''}</div></div>
+        <div style="text-align:right;">${(!l.email && !l.phone) ? '<span class="badge badge-red">No contact</span>' : (l.matched ? '<span class="badge badge-teal">Matched</span>' : '')}</div>
+      </div>
+      <div class="meta" style="margin-top:6px;">${l.email ? '✉ '+esc(l.email)+'&nbsp;&nbsp;' : ''}${l.phone ? '☎ '+esc(l.phone) : ''}</div>
+      <div class="meta">Scanned by ${esc(l.scannedBy)||'—'} · ${fmtTime(l.savedAt)}</div>
+      <div class="actions">
+        <button class="btn btn-outline btn-sm" onclick="editLead('${l._key}')">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteLead('${l._key}')">Delete</button>
+      </div>
+    </div>`).join('');
+}
+document.getElementById('leadSearch').addEventListener('input', renderLeadsList);
+function editLead(key){ const lead = State.leads[key]; if(lead) openReview(lead, key); }
+async function deleteLead(key){
+  if(!confirm('Delete this lead? This cannot be undone.')) return;
+  await State.db.collection('events').doc(State.activeEventId).collection('leads').doc(key).delete();
+  toast('Lead deleted');
+}
+
+/* ---------- CSV export (Salesforce lead import shape) ---------- */
+document.getElementById('btnExportCsv').onclick = () => {
+  const leads = allLeadsSorted();
+  if(!leads.length){ toast('No leads to export yet'); return; }
+  const evName = (State.events.find(e=>e.id===State.activeEventId)||{}).name || '';
+  const rows = leads.map(l => {
+    const parts = (l.name||'').trim().split(/\s+/);
+    const lastName = parts.length>1 ? parts.pop() : (parts[0]||'Unknown');
+    const firstName = parts.join(' ');
+    return {
+      'First Name': firstName, 'Last Name': lastName || 'Unknown', 'Company': l.company||'', 'Title': l.title||'',
+      'Email': l.email||'', 'Phone': l.phone||'', 'Lead Source': 'Conference — '+evName, 'Event': evName,
+      'Scanned By': l.scannedBy||'', 'Scanned Date': l.savedAt ? new Date(l.savedAt).toISOString() : '',
+      'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Description': l.notes||'',
+    };
+  });
+  const csv = Papa.unparse(rows);
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'compass-leads-'+(evName||'export').replace(/[^\w-]+/g,'_')+'-'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  toast('CSV downloaded — ready to import into Salesforce');
+};
+
+/* ---------- camera / QR scanning ---------- */
+async function startCamera(){
+  const video = document.getElementById('camVideo');
+  if(State.qrScanner) return;
+  if(!('mediaDevices' in navigator) || !navigator.mediaDevices.getUserMedia){
+    showCamUnavailable('Camera access isn\'t available in this browser.');
+    return;
+  }
+  if(location.protocol !== 'https:' && location.hostname !== 'localhost'){
+    showCamUnavailable('Camera access needs this page to be served over HTTPS. Host it (Firebase Hosting, Netlify, GitHub Pages) and open the https:// link.');
+    return;
+  }
+  try{
+    State.qrScanner = new QrScanner(video, result => onQrDetected(result.data || result), {
+      returnDetailedScanResult: true, highlightScanRegion: false, highlightCodeOutline: false, maxScansPerSecond: 5,
+    });
+    await State.qrScanner.start();
+    hideCamOffOverlay();
+    document.getElementById('scanStatus').textContent = 'Point camera at badge QR code';
+    document.getElementById('btnToggleCam').textContent = 'Stop camera';
+    State.camAvailable = true;
+  }catch(err){
+    console.error(err);
+    if(State.qrScanner){ try{ State.qrScanner.destroy(); }catch(e){} State.qrScanner = null; }
+    showCamUnavailable('Camera permission was blocked, or no camera is available. You can still add leads manually or via photo.');
+  }
+}
+function showCamUnavailable(msg){
+  const wrap = document.getElementById('scanWrap');
+  let ov = document.getElementById('camOffOverlay');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'camOffOverlay'; ov.className = 'cam-off';
+    ov.style.position = 'absolute'; ov.style.inset = '0'; ov.style.background = '#000';
+    wrap.appendChild(ov);
+  }
+  ov.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18"/><path d="M10.5 5h3l1 2H19a2 2 0 012 2v9M15 19H5a2 2 0 01-2-2V9a2 2 0 012-2h1"/><circle cx="12" cy="13" r="3.2"/></svg><div>${esc(msg)}</div>`;
+  ov.style.display = 'flex';
+  document.getElementById('btnToggleCam').textContent = 'Try camera again';
+  State.camAvailable = false;
+}
+function hideCamOffOverlay(){ const ov=document.getElementById('camOffOverlay'); if(ov) ov.style.display='none'; }
+function stopCamera(){ if(State.qrScanner){ State.qrScanner.stop(); State.qrScanner.destroy(); State.qrScanner=null; } }
+document.getElementById('btnToggleCam').onclick = () => {
+  if(State.qrScanner){ stopCamera(); document.getElementById('scanStatus').textContent='Camera stopped'; document.getElementById('btnToggleCam').textContent='Start camera'; }
+  else startCamera();
+};
+let lastQrAt = 0;
+function onQrDetected(text){
+  const now = Date.now();
+  if(now - lastQrAt < 1500) return;
+  lastQrAt = now;
+  if(!text) return;
+  document.getElementById('scanStatus').textContent = 'Code detected — opening lead…';
+  openReview(parseQrPayload(text));
+}
+function parseQrPayload(text){
+  try{
+    const obj = JSON.parse(text);
+    return {name: obj.name || [obj.firstName,obj.lastName].filter(Boolean).join(' ') || '', company: obj.company||obj.organization||'', title: obj.title||'', email: obj.email||'', phone: obj.phone||'', source:'qr', rawCode:text};
+  }catch(e){}
+  if(/BEGIN:VCARD/i.test(text)){
+    const get = re => (text.match(re)||[])[1] || '';
+    return {name:get(/FN:(.*)/i).trim(), company:get(/ORG:(.*)/i).trim(), title:get(/TITLE:(.*)/i).trim(), email:get(/EMAIL[^:]*:(.*)/i).trim(), phone:get(/TEL[^:]*:(.*)/i).trim(), source:'qr', rawCode:text};
+  }
+  return {name:'', company:'', title:'', email:'', phone:'', source:'qr', rawCode:text};
+}
+
+/* ---------- photo capture -> vision extraction (direct browser call, user's own key) ---------- */
+document.getElementById('btnTakePhoto').onclick = () => {
+  if(!localStorage.getItem(LS_APIKEY)){
+    toast('No API key set — opening manual entry (add a key under Setup to auto-read photos)');
+    openReview({source:'manual'});
+    return;
+  }
+  document.getElementById('photoInput').click();
+};
+document.getElementById('photoInput').addEventListener('change', async function(e){
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  const dataUrl = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }).catch(()=>null);
+  if(!dataUrl){ toast('Could not read that photo'); return; }
+  const base64 = dataUrl.split(',')[1];
+  const mediaType = file.type || 'image/jpeg';
+  showScanOverlay('Reading badge…');
+  try{
+    const extracted = await extractBadgeFields(base64, mediaType);
+    hideScanOverlay();
+    openReview(Object.assign({source:'photo'}, extracted));
+  }catch(err){
+    console.error(err);
+    hideScanOverlay();
+    toast('Could not read the badge — enter it manually');
+    openReview({source:'photo'});
+  }
+});
+function showScanOverlay(msg){
+  const wrap = document.getElementById('scanWrap');
+  let ov = document.getElementById('scanOverlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='scanOverlay'; ov.className='overlay-loading'; wrap.style.position='relative'; wrap.appendChild(ov); }
+  ov.innerHTML = `<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="#7EDDD6" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-opacity=".3"/><path d="M21 12a9 9 0 00-9-9"/></svg><div>${esc(msg)}</div>`;
+  ov.style.display = 'flex';
+}
+function hideScanOverlay(){ const ov=document.getElementById('scanOverlay'); if(ov) ov.style.display='none'; }
+async function extractBadgeFields(base64, mediaType){
+  const apiKey = localStorage.getItem(LS_APIKEY);
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type':'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
+      messages: [{ role:'user', content: [
+        {type:'image', source:{type:'base64', media_type: mediaType, data: base64}},
+        {type:'text', text: 'This is a photo of a conference name badge. Extract the attendee\'s full name, company/agency, job title, email, and phone number if visible. Respond with ONLY raw JSON, no markdown fences, no explanation, in exactly this shape: {"name":"","company":"","title":"","email":"","phone":""}. Use an empty string for any field that is not visible on the badge.'}
+      ]}]
+    })
+  });
+  if(!resp.ok){
+    const errText = await resp.text().catch(()=> '');
+    throw new Error('API error ' + resp.status + ' ' + errText.slice(0,200));
+  }
+  const data = await resp.json();
+  const textBlock = (data.content || []).find(b => b.type === 'text');
+  if(!textBlock) throw new Error('No text in response');
+  const clean = textBlock.text.replace(/```json|```/g,'').trim();
+  const obj = JSON.parse(clean);
+  return { name: obj.name||'', company: obj.company||'', title: obj.title||'', email: obj.email||'', phone: obj.phone||'' };
+}
+
+/* ---------- review / save flow ---------- */
+function openReview(lead, existingKey){
+  stopCamera();
+  State.pendingLead = lead ? Object.assign({}, lead) : {name:'',company:'',title:'',email:'',phone:'',notes:'',source:'manual'};
+  State.pendingLead._existingKey = existingKey || null;
+
+  document.getElementById('f_name').value = State.pendingLead.name || '';
+  document.getElementById('f_company').value = State.pendingLead.company || '';
+  document.getElementById('f_title').value = State.pendingLead.title || '';
+  document.getElementById('f_email').value = State.pendingLead.email || '';
+  document.getElementById('f_phone').value = State.pendingLead.phone || '';
+  document.getElementById('f_notes').value = State.pendingLead.notes || '';
+  document.getElementById('f_source').textContent = 'Source: ' + ({qr:'QR / barcode scan', photo:'photo (AI-read)', manual:'manual entry'}[State.pendingLead.source] || 'manual entry');
+
+  const matchArea = document.getElementById('matchArea');
+  matchArea.innerHTML = '';
+  const match = findAttendeeMatch(State.pendingLead.name, State.pendingLead.company);
+  if(match){
+    const a = match.attendee;
+    matchArea.innerHTML = `
+      <div class="match-chip">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4AA89A" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg>
+        <div class="txt"><b>${match.confidence==='exact'?'Attendee list match':'Possible attendee match'}</b>${esc(a.name)}${a.company?' · '+esc(a.company):''}</div>
+        <button class="btn btn-teal btn-sm" onclick="applyAttendeeMatch()">Use this</button>
+      </div>`;
+    State.pendingLead._suggestedMatch = a;
+    if(match.confidence === 'exact'){ State.pendingLead.matched = true; applyAttendeeMatch(true); }
+  }
+  if(!State.pendingLead._existingKey){
+    const dupe = findExistingLead(State.pendingLead.name);
+    if(dupe){
+      const d = dupe.lead;
+      const dupeDiv = document.createElement('div');
+      dupeDiv.className = 'alert-box';
+      dupeDiv.style.background = '#E3F5F1'; dupeDiv.style.borderColor = '#BCE3DC'; dupeDiv.style.color = '#1d3a66';
+      dupeDiv.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#4AA89A" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+        <div style="flex:1;">Already scanned by ${esc(d.scannedBy)||'someone'} (${fmtTime(d.savedAt)}) as "${esc(d.name)}".
+        <button class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="editLead('${dupe.key}')">Edit that lead instead</button></div>`;
+      matchArea.appendChild(dupeDiv);
+    }
+  }
+  updateContactAlert();
+  switchViewOnly('review');
+}
+function applyAttendeeMatch(silent){
+  const a = State.pendingLead && State.pendingLead._suggestedMatch;
+  if(!a) return;
+  if(!document.getElementById('f_email').value) document.getElementById('f_email').value = a.email || '';
+  if(!document.getElementById('f_phone').value) document.getElementById('f_phone').value = a.phone || '';
+  if(!document.getElementById('f_company').value) document.getElementById('f_company').value = a.company || '';
+  State.pendingLead.matched = true;
+  updateContactAlert();
+  if(!silent) toast('Filled in from attendee list');
+}
+function updateContactAlert(){
+  const email = document.getElementById('f_email').value.trim();
+  const phone = document.getElementById('f_phone').value.trim();
+  const area = document.getElementById('contactAlertArea');
+  const missing = !email && !phone;
+  document.getElementById('f_email_wrap').classList.toggle('missing', missing);
+  document.getElementById('f_phone_wrap').classList.toggle('missing', missing);
+  area.innerHTML = missing ? `<div class="alert-box"><svg viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg><div>No email or phone yet — while they're still standing here, grab at least one before saving.</div></div>` : '';
+}
+['f_email','f_phone'].forEach(id => document.getElementById(id).addEventListener('input', updateContactAlert));
+function closeReview(){ State.pendingLead = null; switchTab('scan'); }
+
+document.getElementById('btnSaveLead').onclick = async () => {
+  const name = document.getElementById('f_name').value.trim();
+  const email = document.getElementById('f_email').value.trim();
+  const phone = document.getElementById('f_phone').value.trim();
+  if(!name){ document.getElementById('f_name').focus(); toast('Add a name before saving'); return; }
+  if(!State.activeEventId){ toast('Set an active event first (Events tab)'); return; }
+  if(!email && !phone){ if(!confirm('No email or phone on this lead — save anyway?')) return; }
+  const lead = {
+    name, company: document.getElementById('f_company').value.trim(), title: document.getElementById('f_title').value.trim(),
+    email, phone, notes: document.getElementById('f_notes').value.trim(),
+    source: (State.pendingLead && State.pendingLead.source) || 'manual',
+    matched: !!(State.pendingLead && State.pendingLead.matched),
+    scannedBy: State.workerName || 'Unknown',
+    savedAt: (State.pendingLead && State.pendingLead.savedAt) || Date.now(),
+  };
+  const btn = document.getElementById('btnSaveLead');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const col = State.db.collection('events').doc(State.activeEventId).collection('leads');
+    if(State.pendingLead && State.pendingLead._existingKey) await col.doc(State.pendingLead._existingKey).set(lead);
+    else await col.add(lead);
+    toast('Lead saved: ' + name);
+    closeReview();
+  }catch(err){
+    console.error(err);
+    toast('Save failed — check connection and try again');
+  }
+  btn.disabled = false; btn.textContent = 'Save lead';
+};
+
+/* ---------- boot ---------- */
+function boot(){
+  promptWorkerName(false);
+  loadEventsAndMeta();
+  switchTab('scan');
+}
+(function init(){
+  const savedCfg = localStorage.getItem(LS_FIREBASE);
+  if(!savedCfg){
+    document.getElementById('setupGate').style.display = 'block';
+    return;
+  }
+  const cfg = JSON.parse(savedCfg);
+  const status = document.getElementById('gateStatusLine');
+  if(connectFirebase(cfg, status)) boot();
+  else document.getElementById('setupGate').style.display = 'block';
+})();
+</script>
+</body>
+</html>

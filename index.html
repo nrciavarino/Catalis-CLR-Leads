@@ -449,12 +449,33 @@ function prefillSetupView(){
 function parseFirebaseConfigInput(raw){
   raw = raw.trim();
   if(!raw) return null;
-  // tolerate people pasting the `const firebaseConfig = {...};` snippet from the console
-  const braceStart = raw.indexOf('{');
-  const braceEnd = raw.lastIndexOf('}');
-  if(braceStart >= 0 && braceEnd > braceStart) raw = raw.slice(braceStart, braceEnd+1);
-  try{ return JSON.parse(raw); }catch(e){}
-  try{ return Function('"use strict";return (' + raw + ')')(); }catch(e){ return null; }
+  // Some paste sources (notes apps, chat tools) turn bare domains into markdown
+  // links — e.g. authDomain: "[foo.firebaseapp.com](http://foo.firebaseapp.com/)".
+  // Unwrap those back to plain text before anything else.
+  raw = raw.replace(/\[([^\]\n]+)\]\([^)\n]*\)/g, '$1');
+  // People often paste the whole console snippet, which starts with
+  // `import { initializeApp } from "firebase/app";` — that line's braces come
+  // BEFORE the actual config object's braces, so a naive first-'{'/last-'}'
+  // slice grabs the wrong span. Instead, anchor on a field we know is in the
+  // real config (apiKey/projectId) and walk outward to its balanced braces.
+  const attempts = [raw];
+  const sigIdx = raw.search(/apiKey|projectId/i);
+  if(sigIdx !== -1){
+    const start = raw.lastIndexOf('{', sigIdx);
+    if(start !== -1){
+      let depth = 0, end = -1;
+      for(let i=start;i<raw.length;i++){
+        if(raw[i]==='{') depth++;
+        else if(raw[i]==='}'){ depth--; if(depth===0){ end=i; break; } }
+      }
+      if(end !== -1) attempts.unshift(raw.slice(start, end+1));
+    }
+  }
+  for(const candidate of attempts){
+    try{ return JSON.parse(candidate); }catch(e){}
+    try{ return Function('"use strict";return (' + candidate + ')')(); }catch(e){}
+  }
+  return null;
 }
 function connectFirebase(config, statusEl){
   try{

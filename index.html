@@ -449,6 +449,9 @@ function prefillSetupView(){
 function parseFirebaseConfigInput(raw){
   raw = raw.trim();
   if(!raw) return null;
+  // "Smart quotes" from Notes/email/word processors look identical to straight
+  // quotes but break both JSON.parse and the JS-eval fallback below.
+  raw = raw.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
   // Some paste sources (notes apps, chat tools) turn bare domains into markdown
   // links — e.g. authDomain: "[foo.firebaseapp.com](http://foo.firebaseapp.com/)".
   // Unwrap those back to plain text before anything else.

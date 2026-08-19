@@ -384,7 +384,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.0.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.0.1'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -765,8 +765,16 @@ function getOrCreateColumn(label){
 }
 function refreshAttendeeColumnsFromActiveEvent(){
   const ev = State.events.find(e=>e.id===State.activeEventId);
-  State.attendeeColumns = (ev && Array.isArray(ev.attendeeColumns) && ev.attendeeColumns.length)
-    ? ev.attendeeColumns.slice() : CANONICAL_COLS.slice();
+  const persisted = (ev && Array.isArray(ev.attendeeColumns)) ? ev.attendeeColumns : [];
+  // Always start from the canonical columns the *current* code expects, then
+  // layer in whatever custom columns are on the event — rather than trusting
+  // a persisted list wholesale. Otherwise an event that had columns saved
+  // under an older version of this app (e.g. before First/Last Name existed
+  // as separate fields) permanently hides those fields forever, even after
+  // the app itself is updated — which is exactly what was happening here.
+  const merged = CANONICAL_COLS.slice();
+  persisted.forEach(c => { if(c && c.key && !merged.some(m => m.key === c.key)) merged.push(c); });
+  State.attendeeColumns = merged;
   renderAttendeeTable();
 }
 async function persistAttendeeColumns(){

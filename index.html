@@ -248,6 +248,7 @@
       </div>
     </div>
     <div class="card" style="overflow-x:auto;">
+      <div class="hint" style="margin-bottom:6px;">← swipe sideways to see more columns →</div>
       <table class="at-table" id="attendeeTable">
         <thead><tr id="attendeeTheadRow"></tr></thead>
         <tbody id="attendeeTbody"></tbody>
@@ -302,12 +303,6 @@
       <p style="margin-top:10px;">⚠️ This link contains your Firebase config and API key in plain sight (in
       the URL). Send it somewhere private — a direct message, not a public channel — and treat it like a
       password. Anyone with the link can read/write your leads and spend against your API key.</p>
-    </div>
-    <div class="card" style="font-size:13px;color:var(--ink-soft);line-height:1.5;">
-      Colors and the Compass mark here are still a placeholder pass. I checked catalisgov.com, but my tools
-      can only read the page's text — not its CSS or logo image — so I couldn't pull your exact hex codes
-      from it. Send me the real values (a brand guide, or even "primary blue is #0A3D62") or upload your
-      kiosk file / logo, and I'll match it exactly and drop this note.
     </div>
     <div class="card" style="font-size:12px;color:var(--ink-soft);text-align:center;">
       Compass Leads <span id="setupVersionLine"></span>
@@ -384,7 +379,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.0.1'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.0.2'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -415,6 +410,7 @@ const State = {
   unsubAttendees: null,
   unsubEvents: null,
   unsubMeta: null,
+  unsubCompetitors: null,
   pendingLead: null,
 };
 
@@ -422,7 +418,8 @@ const State = {
 const DEFAULT_COMPETITORS = ['Tyler Technologies','Journal Technologies','Fidlar Technologies','Simplifile'];
 const SOFTWARE_FIXED_TAIL = ['Catalis (existing customer)','Homegrown / in-house system','Paper / no system','Other — see notes'];
 function subscribeCompetitors(){
-  State.db.collection('meta').doc('competitors').onSnapshot(doc => {
+  if(State.unsubCompetitors){ State.unsubCompetitors(); State.unsubCompetitors = null; }
+  State.unsubCompetitors = State.db.collection('meta').doc('competitors').onSnapshot(doc => {
     if(doc.exists && Array.isArray(doc.data().list)){
       State.competitors = doc.data().list;
     } else {
@@ -560,9 +557,16 @@ function parseFirebaseConfigInput(raw){
   }
   return null;
 }
-function connectFirebase(config, statusEl){
+async function connectFirebase(config, statusEl){
   try{
-    if(!firebase.apps.length) firebase.initializeApp(config);
+    // If an app is already initialized (e.g. the person is fixing a typo'd
+    // config and hitting Save & connect a second time without reloading the
+    // page), initializeApp() would silently no-op and leave the OLD project
+    // connected — so tear down any existing app first.
+    if(firebase.apps.length){
+      await Promise.all(firebase.apps.map(app => app.delete().catch(()=>{})));
+    }
+    firebase.initializeApp(config);
     State.db = firebase.firestore();
     if(statusEl) statusEl.textContent = 'Connected to ' + (config.projectId || 'Firebase') + '.';
     setSyncState('ok');
@@ -574,25 +578,28 @@ function connectFirebase(config, statusEl){
     return false;
   }
 }
-document.getElementById('btnGateConnect').onclick = () => {
+document.getElementById('btnGateConnect').onclick = async () => {
   const el = document.getElementById('gateFirebaseConfig');
   const status = document.getElementById('gateStatusLine');
   const cfg = parseFirebaseConfigInput(el.value);
   if(!cfg || !cfg.projectId){ status.textContent = 'That doesn\'t look like a valid Firebase config — check the README.'; return; }
-  if(connectFirebase(cfg, status)){
+  if(await connectFirebase(cfg, status)){
     localStorage.setItem(LS_FIREBASE, JSON.stringify(cfg));
     document.getElementById('setupGate').style.display = 'none';
     boot();
   }
 };
-document.getElementById('btnSaveFirebaseConfig').onclick = () => {
+document.getElementById('btnSaveFirebaseConfig').onclick = async () => {
   const el = document.getElementById('setupFirebaseConfig');
   const status = document.getElementById('firebaseStatusLine');
   const cfg = parseFirebaseConfigInput(el.value);
   if(!cfg || !cfg.projectId){ status.textContent = 'That doesn\'t look like a valid Firebase config.'; return; }
-  // tear down old listeners before reconnecting to a (possibly different) project
-  [State.unsubLeads, State.unsubAttendees, State.unsubEvents, State.unsubMeta].forEach(u => { if(u) try{u();}catch(e){} });
-  if(connectFirebase(cfg, status)){
+  // Tear down old listeners before reconnecting to a (possibly different) project — and
+  // null them out, not just call them, so a stale reference can't get invoked again later.
+  ['unsubLeads','unsubAttendees','unsubEvents','unsubMeta','unsubCompetitors'].forEach(key => {
+    if(State[key]){ try{ State[key](); }catch(e){} State[key] = null; }
+  });
+  if(await connectFirebase(cfg, status)){
     localStorage.setItem(LS_FIREBASE, JSON.stringify(cfg));
     boot();
   }
@@ -682,9 +689,18 @@ function renderEventsList(){
       <div><div style="font-weight:700;">${esc(ev.name)}</div><div class="hint">Created ${fmtTime(ev.createdAt)}</div></div>
       <div class="row">
         ${ev.id===State.activeEventId ? `<span class="badge badge-teal">Active</span>` : `<button class="btn btn-outline btn-sm" onclick="setActiveEvent('${ev.id}')">Make active</button>`}
+        <button class="btn btn-outline btn-sm" onclick="renameEvent('${ev.id}')" aria-label="Rename event">Rename</button>
         <button class="btn btn-danger btn-sm" onclick="deleteEvent('${ev.id}')">Delete</button>
       </div>
     </div>`).join('');
+}
+async function renameEvent(id){
+  const ev = State.events.find(e => e.id === id);
+  if(!ev) return;
+  const newName = (prompt('Rename event', ev.name) || '').trim();
+  if(!newName || newName === ev.name) return;
+  await State.db.collection('events').doc(id).set({name: newName}, {merge:true});
+  toast('Event renamed');
 }
 async function deleteEvent(id){
   if(!confirm('Remove this event? Its leads and attendee list stay in Firestore but won\'t show up here.')) return;
@@ -1214,6 +1230,11 @@ function openReview(lead, existingKey){
   }
   updateContactAlert();
   switchViewOnly('review');
+  // Manual entries and failed-OCR photos land here with no name — get the
+  // keyboard up on that field immediately instead of making them tap first.
+  if(!State.pendingLead.name){
+    setTimeout(() => { const el = document.getElementById('f_name'); if(el) el.focus(); }, 50);
+  }
 }
 function applyAttendeeMatch(silent){
   const a = State.pendingLead && State.pendingLead._suggestedMatch;
@@ -1332,7 +1353,6 @@ document.getElementById('btnSaveLead').onclick = async () => {
   const phone = document.getElementById('f_phone').value.trim();
   if(!name){ document.getElementById('f_name').focus(); toast('Add a name before saving'); return; }
   if(!State.activeEventId){ toast('Set an active event first (Events tab)'); return; }
-  if(!email && !phone){ if(!confirm('No email or phone on this lead — save anyway?')) return; }
   const lead = {
     name, company: document.getElementById('f_company').value.trim(), title: document.getElementById('f_title').value.trim(),
     email, phone, notes: document.getElementById('f_notes').value.trim(),
@@ -1365,7 +1385,7 @@ function boot(){
   subscribeCompetitors();
   switchTab('scan');
 }
-(function init(){
+(async function init(){
   tryConsumeSetupLink(); // if this page was opened via a generated setup link, this saves it to localStorage first
   const savedCfg = localStorage.getItem(LS_FIREBASE);
   if(!savedCfg){
@@ -1374,7 +1394,7 @@ function boot(){
   }
   const cfg = JSON.parse(savedCfg);
   const status = document.getElementById('gateStatusLine');
-  if(connectFirebase(cfg, status)) boot();
+  if(await connectFirebase(cfg, status)) boot();
   else document.getElementById('setupGate').style.display = 'block';
 })();
 </script>

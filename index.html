@@ -169,7 +169,7 @@
       <circle cx="21" cy="53" r="7" fill="#7EDDD6"/>
     </g>
   </svg>
-  <div class="brand"><b>Compass Leads</b><span id="workerLabelTop">—</span></div>
+  <div class="brand"><b>Compass Leads</b><span id="workerLabelTop"></span></div>
   </div>
   <div id="eventPill" onclick="switchTab('events')"><span id="syncDot"></span><span id="eventPillText">No event set</span></div>
 </div>
@@ -304,7 +304,13 @@
       password. Anyone with the link can read/write your leads and spend against your API key.</p>
     </div>
     <div class="card" style="font-size:13px;color:var(--ink-soft);line-height:1.5;">
-      Colors and the Compass mark here are a placeholder pass — swap in your exact kiosk palette / logo any time and I can rebuild the theme around it.
+      Colors and the Compass mark here are still a placeholder pass. I checked catalisgov.com, but my tools
+      can only read the page's text — not its CSS or logo image — so I couldn't pull your exact hex codes
+      from it. Send me the real values (a brand guide, or even "primary blue is #0A3D62") or upload your
+      kiosk file / logo, and I'll match it exactly and drop this note.
+    </div>
+    <div class="card" style="font-size:12px;color:var(--ink-soft);text-align:center;">
+      Compass Leads <span id="setupVersionLine"></span>
     </div>
   </div>
 
@@ -378,6 +384,10 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
+const APP_VERSION = 'v1.0.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+document.getElementById('workerLabelTop').textContent = APP_VERSION;
+const setupVersionEl = document.getElementById('setupVersionLine');
+if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
 const LS_FIREBASE = 'compassleads.firebaseConfig';
 const LS_APIKEY   = 'compassleads.apiKey';
 const LS_WORKER   = 'compassleads.workerName';
@@ -485,7 +495,7 @@ function promptWorkerName(force){
     State.workerName = v;
     localStorage.setItem(LS_WORKER, v);
     document.getElementById('workerLabel').textContent = v;
-    document.getElementById('workerLabelTop').textContent = v;
+    document.getElementById('workerLabelTop').textContent = v + ' · ' + APP_VERSION;
     box.remove();
   }
   box.querySelector('#workerNameOk').onclick = commit;
@@ -850,8 +860,18 @@ document.getElementById('attendeeCsvInput').addEventListener('change', function(
       // only fall back to splitting a combined "name" column when it doesn't.
       const firstHeader = findHeader(['first name','first']);
       const lastHeader = findHeader(['last name','last','surname']);
-      const nameHeader = (!firstHeader && !lastHeader) ? findHeader(['full name','name']) : null;
-      const companyHeader = findHeader(['company','agency','organization']);
+      let nameHeader = (!firstHeader && !lastHeader) ? findHeader(['full name','name']) : null;
+      // Last resort: nothing looked like a name column by header text at all
+      // (e.g. a column literally called "Attendee" or "Contact"). Rather than
+      // silently dropping every row, assume whatever the first column is
+      // holds the person's name — that's true for the overwhelming majority
+      // of exported attendee lists — and say so explicitly in the toast.
+      let usedFallbackFirstColumn = false;
+      if(!firstHeader && !lastHeader && !nameHeader && headers.length){
+        nameHeader = headers[0];
+        usedFallbackFirstColumn = true;
+      }
+      const companyHeader = findHeader(['company','agency','organization','county']);
       const emailHeader = findHeader(['email']);
       const phoneHeader = findHeader(['phone','mobile','tel']);
       const consumed = new Set([firstHeader,lastHeader,nameHeader,companyHeader,emailHeader,phoneHeader].filter(Boolean));
@@ -890,8 +910,9 @@ document.getElementById('attendeeCsvInput').addEventListener('change', function(
       renderAttendeeTable();
       persistAttendeeColumns();
       const extraNote = customHeaders.length ? (' · added column' + (customHeaders.length>1?'s: ':': ') + customHeaders.join(', ')) : '';
-      const splitNote = (!firstHeader && !lastHeader && nameHeader) ? ' · split single name column — double-check anyone with a multi-word last name' : '';
-      toast('Loaded ' + parsed.length + ' attendees' + extraNote + splitNote);
+      const splitNote = (!firstHeader && !lastHeader && nameHeader && !usedFallbackFirstColumn) ? ' · split single name column — double-check anyone with a multi-word last name' : '';
+      const fallbackNote = usedFallbackFirstColumn ? (' · no obvious name column, used "'+nameHeader+'" — check this looks right') : '';
+      toast('Loaded ' + parsed.length + ' attendees' + extraNote + splitNote + fallbackNote);
     },
     error: function(){ toast('Could not read that CSV'); }
   });
@@ -1213,7 +1234,7 @@ function updateContactAlert(){
   area.innerHTML = `<div class="alert-box">
       <svg viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
       <div style="flex:1;">
-        No email or phone yet — while they're still standing here, grab at least one before saving.
+        No email or phone on this lead yet — add it now if you have it, or come back and fill it in on edit later.
         ${hasKey
           ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" id="btnWebSearchContact">Search the web for contact info</button></div><div id="webSearchStatus" class="hint" style="margin-top:4px;"></div>`
           : `<div class="hint" style="margin-top:6px;">Add an Anthropic API key under Setup to enable a web lookup here (already checked the attendee list — nothing there either).</div>`}

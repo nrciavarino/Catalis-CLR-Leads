@@ -212,6 +212,19 @@
       </div>
       <div class="field" id="f_email_wrap"><label class="field-label">Email</label><input type="email" id="f_email" placeholder="name@agency.gov"></div>
       <div class="field" id="f_phone_wrap"><label class="field-label">Phone</label><input type="tel" id="f_phone" placeholder="(555) 555-0100"></div>
+      <div class="field"><label class="field-label">Current software (ask, don't guess)</label>
+        <select id="f_software">
+          <option value="">— not asked / not mentioned —</option>
+          <option>Catalis (existing customer)</option>
+          <option>Tyler Technologies</option>
+          <option>Journal Technologies</option>
+          <option>Fidlar Technologies</option>
+          <option>Simplifile</option>
+          <option>Homegrown / in-house system</option>
+          <option>Paper / no system</option>
+          <option>Other — see notes</option>
+        </select>
+      </div>
       <div class="field"><label class="field-label">Notes</label><textarea id="f_notes" placeholder="Interested in Benchmark integration…"></textarea></div>
       <div class="hint" id="f_source">Source: manual entry</div>
     </div>
@@ -275,6 +288,17 @@
       <p>If a badge has no QR code, "No QR — take photo" can have Claude read the name/company/email off the photo automatically. This calls the Anthropic API directly from the phone using your own API key — it never touches Claude.ai. Leave blank to skip this and just type badges in manually.</p>
       <div class="field"><label class="field-label">Anthropic API key</label><input type="password" id="setupApiKey" placeholder="sk-ant-…"></div>
       <button class="btn btn-outline btn-block" id="btnSaveApiKey">Save key</button>
+    </div>
+    <h2 class="section-title">Send this setup to the rest of the team</h2>
+    <div class="card">
+      <p>Once the two boxes above are connected the way you want, generate a link that has both baked in.
+      Anyone who opens it gets fully set up automatically — no copying or pasting on their end, no hunting
+      for the Setup tab.</p>
+      <button class="btn btn-teal btn-block" id="btnGenSetupLink">Generate setup link</button>
+      <div id="setupLinkArea" style="margin-top:10px;"></div>
+      <p style="margin-top:10px;">⚠️ This link contains your Firebase config and API key in plain sight (in
+      the URL). Send it somewhere private — a direct message, not a public channel — and treat it like a
+      password. Anyone with the link can read/write your leads and spend against your API key.</p>
     </div>
     <div class="card" style="font-size:13px;color:var(--ink-soft);line-height:1.5;">
       Colors and the Compass mark here are a placeholder pass — swap in your exact kiosk palette / logo any time and I can rebuild the theme around it.
@@ -525,6 +549,43 @@ document.getElementById('btnSaveApiKey').onclick = () => {
   prefillSetupView();
 };
 
+/* ---------- one-tap setup link for reps ---------- */
+// Packs the Firebase config + (optional) API key into the URL's hash fragment.
+// Hash fragments never get sent to a server (unlike query params), so at least
+// a static host's access logs won't see it — but it's still fully visible to
+// anyone who has the link, which is why this is opt-in and clearly labeled.
+document.getElementById('btnGenSetupLink').onclick = () => {
+  const cfg = localStorage.getItem(LS_FIREBASE);
+  if(!cfg){ toast('Connect Firebase first, then generate the link'); return; }
+  const payload = { fb: JSON.parse(cfg), key: localStorage.getItem(LS_APIKEY) || '' };
+  const encoded = btoa(encodeURIComponent(JSON.stringify(payload)));
+  const base = location.origin + location.pathname;
+  const link = base + '#setup=' + encoded;
+  const area = document.getElementById('setupLinkArea');
+  area.innerHTML = `
+    <input type="text" id="setupLinkOut" class="mono" readonly value="${esc(link)}" style="margin-bottom:8px;">
+    <button class="btn btn-outline btn-block btn-sm" id="btnCopySetupLink">Copy link</button>`;
+  document.getElementById('btnCopySetupLink').onclick = async () => {
+    try{ await navigator.clipboard.writeText(link); toast('Copied — send it privately'); }
+    catch(e){ document.getElementById('setupLinkOut').select(); toast('Select-all done — copy with your keyboard'); }
+  };
+};
+function tryConsumeSetupLink(){
+  if(!location.hash.startsWith('#setup=')) return false;
+  try{
+    const payload = JSON.parse(decodeURIComponent(atob(location.hash.slice(7))));
+    if(payload.fb && payload.fb.projectId){
+      localStorage.setItem(LS_FIREBASE, JSON.stringify(payload.fb));
+      if(payload.key) localStorage.setItem(LS_APIKEY, payload.key);
+      // Scrub the sensitive hash out of the visible URL / browser history right away.
+      history.replaceState(null, '', location.pathname);
+      toast('Connected from setup link');
+      return true;
+    }
+  }catch(e){ console.error('bad setup link', e); }
+  return false;
+}
+
 /* ---------- events ---------- */
 function loadEventsAndMeta(){
   if(State.unsubEvents) State.unsubEvents();
@@ -755,7 +816,7 @@ function renderLeadsList(){
         <div style="text-align:right;">${(!l.email && !l.phone) ? '<span class="badge badge-red">No contact</span>' : (l.matched ? '<span class="badge badge-teal">Matched</span>' : '')}</div>
       </div>
       <div class="meta" style="margin-top:6px;">${l.email ? '✉ '+esc(l.email)+'&nbsp;&nbsp;' : ''}${l.phone ? '☎ '+esc(l.phone) : ''}</div>
-      <div class="meta">Scanned by ${esc(l.scannedBy)||'—'} · ${fmtTime(l.savedAt)}</div>
+      <div class="meta">Scanned by ${esc(l.scannedBy)||'—'} · ${fmtTime(l.savedAt)}${l.currentSoftware ? ' · currently on '+esc(l.currentSoftware) : ''}</div>
       <div class="actions">
         <button class="btn btn-outline btn-sm" onclick="editLead('${l._key}')">Edit</button>
         <button class="btn btn-danger btn-sm" onclick="deleteLead('${l._key}')">Delete</button>
@@ -783,7 +844,7 @@ document.getElementById('btnExportCsv').onclick = () => {
       'First Name': firstName, 'Last Name': lastName || 'Unknown', 'Company': l.company||'', 'Title': l.title||'',
       'Email': l.email||'', 'Phone': l.phone||'', 'Lead Source': 'Conference — '+evName, 'Event': evName,
       'Scanned By': l.scannedBy||'', 'Scanned Date': l.savedAt ? new Date(l.savedAt).toISOString() : '',
-      'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Description': l.notes||'',
+      'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Current Software': l.currentSoftware||'', 'Description': l.notes||'',
     };
   });
   const csv = Papa.unparse(rows);
@@ -944,6 +1005,7 @@ function openReview(lead, existingKey){
   document.getElementById('f_email').value = State.pendingLead.email || '';
   document.getElementById('f_phone').value = State.pendingLead.phone || '';
   document.getElementById('f_notes').value = State.pendingLead.notes || '';
+  document.getElementById('f_software').value = State.pendingLead.currentSoftware || '';
   document.getElementById('f_source').textContent = 'Source: ' + ({qr:'QR / barcode scan', photo:'photo (AI-read)', manual:'manual entry'}[State.pendingLead.source] || 'manual entry');
 
   const matchArea = document.getElementById('matchArea');
@@ -1008,6 +1070,7 @@ document.getElementById('btnSaveLead').onclick = async () => {
   const lead = {
     name, company: document.getElementById('f_company').value.trim(), title: document.getElementById('f_title').value.trim(),
     email, phone, notes: document.getElementById('f_notes').value.trim(),
+    currentSoftware: document.getElementById('f_software').value,
     source: (State.pendingLead && State.pendingLead.source) || 'manual',
     matched: !!(State.pendingLead && State.pendingLead.matched),
     scannedBy: State.workerName || 'Unknown',
@@ -1035,6 +1098,7 @@ function boot(){
   switchTab('scan');
 }
 (function init(){
+  tryConsumeSetupLink(); // if this page was opened via a generated setup link, this saves it to localStorage first
   const savedCfg = localStorage.getItem(LS_FIREBASE);
   if(!savedCfg){
     document.getElementById('setupGate').style.display = 'block';

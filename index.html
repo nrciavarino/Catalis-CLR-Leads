@@ -395,7 +395,7 @@ const State = {
   events: [],
   activeEventId: null,
   attendees: [],
-  attendeeColumns: [{key:'name',label:'Name'},{key:'company',label:'Company'},{key:'email',label:'Email'},{key:'phone',label:'Phone'}],
+  attendeeColumns: [{key:'firstName',label:'First Name'},{key:'lastName',label:'Last Name'},{key:'company',label:'Company'},{key:'email',label:'Email'},{key:'phone',label:'Phone'}],
   competitors: [],
   leads: {},              // docId -> lead
   qrScanner: null,
@@ -713,7 +713,7 @@ function subscribeToActiveEvent(){
 
   State.unsubAttendees = State.db.collection('events').doc(State.activeEventId).collection('attendees')
     .onSnapshot(snap => {
-      State.attendees = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
+      State.attendees = snap.docs.map(d => migrateLegacyName(Object.assign({id:d.id}, d.data())));
       renderAttendeeTable();
     }, err => console.error('attendees snapshot error', err));
 }
@@ -723,9 +723,21 @@ function subscribeToActiveEvent(){
 // else in an uploaded file (or added by hand) becomes its own column, persisted
 // on the event doc so every rep's table stays in sync, not just the row data.
 const CANONICAL_COLS = [
-  {key:'name', label:'Name'}, {key:'company', label:'Company'},
-  {key:'email', label:'Email'}, {key:'phone', label:'Phone'},
+  {key:'firstName', label:'First Name'}, {key:'lastName', label:'Last Name'},
+  {key:'company', label:'Company'}, {key:'email', label:'Email'}, {key:'phone', label:'Phone'},
 ];
+function attendeeFullName(a){ return [a.firstName, a.lastName].filter(Boolean).join(' ').trim(); }
+// Older saved attendee records (or a legacy CSV) may only have a single `name`
+// field — split it once on the way in so the rest of the app only ever has to
+// think about firstName/lastName.
+function migrateLegacyName(a){
+  if((!a.firstName && !a.lastName) && a.name){
+    const parts = a.name.trim().split(/\s+/);
+    a.lastName = parts.length > 1 ? parts.pop() : (parts[0] || '');
+    a.firstName = parts.join(' ');
+  }
+  return a;
+}
 function sanitizeColKey(label, existingKeys){
   let base = label.toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
   if(!base) base = 'field';
@@ -834,13 +846,15 @@ document.getElementById('attendeeCsvInput').addEventListener('change', function(
       const headers = res.meta.fields || [];
       const lower = headers.map(h=>h.toLowerCase());
       const findHeader = patterns => headers.find((h,i) => patterns.some(p => lower[i].includes(p)));
-      const nameHeader = findHeader(['full name','name']);
-      const firstHeader = !nameHeader ? findHeader(['first']) : null;
-      const lastHeader = !nameHeader ? findHeader(['last']) : null;
+      // Prefer separate first/last columns when the file actually has them —
+      // only fall back to splitting a combined "name" column when it doesn't.
+      const firstHeader = findHeader(['first name','first']);
+      const lastHeader = findHeader(['last name','last','surname']);
+      const nameHeader = (!firstHeader && !lastHeader) ? findHeader(['full name','name']) : null;
       const companyHeader = findHeader(['company','agency','organization']);
       const emailHeader = findHeader(['email']);
       const phoneHeader = findHeader(['phone','mobile','tel']);
-      const consumed = new Set([nameHeader,firstHeader,lastHeader,companyHeader,emailHeader,phoneHeader].filter(Boolean));
+      const consumed = new Set([firstHeader,lastHeader,nameHeader,companyHeader,emailHeader,phoneHeader].filter(Boolean));
       const customHeaders = headers.filter(h => !consumed.has(h));
       // Register any not-yet-seen columns from this file before mapping rows, so
       // every row (even ones missing a value) gets a consistent set of keys.
@@ -848,23 +862,36 @@ document.getElementById('attendeeCsvInput').addEventListener('change', function(
       customHeaders.forEach(h => { headerToKey[h] = getOrCreateColumn(h); });
 
       const parsed = res.data.map(row => {
+        let firstName = '', lastName = '';
+        if(firstHeader || lastHeader){
+          firstName = firstHeader ? (row[firstHeader]||'').trim() : '';
+          lastName = lastHeader ? (row[lastHeader]||'').trim() : '';
+        } else if(nameHeader){
+          // No separate columns to work with — split "Last word = last name" as
+          // a best guess. Flagged in the toast below since compound last names
+          // (e.g. "Van Der Berg") will split wrong and may need a manual fix.
+          const parts = (row[nameHeader]||'').trim().split(/\s+/).filter(Boolean);
+          lastName = parts.length > 1 ? parts.pop() : (parts[0] || '');
+          firstName = parts.join(' ');
+        }
         const rec = {
           id: 'local-'+uid(),
-          name: nameHeader ? (row[nameHeader]||'').trim() : [firstHeader&&row[firstHeader], lastHeader&&row[lastHeader]].filter(Boolean).join(' ').trim(),
+          firstName, lastName,
           company: companyHeader ? (row[companyHeader]||'').trim() : '',
           email: emailHeader ? (row[emailHeader]||'').trim() : '',
           phone: phoneHeader ? (row[phoneHeader]||'').trim() : '',
         };
         customHeaders.forEach(h => { rec[headerToKey[h]] = (row[h]||'').trim(); });
         return rec;
-      }).filter(r => r.name);
+      }).filter(r => r.firstName || r.lastName);
 
       if(!parsed.length){ toast('No rows found — check the CSV headers'); return; }
       State.attendees = State.attendees.concat(parsed);
       renderAttendeeTable();
       persistAttendeeColumns();
       const extraNote = customHeaders.length ? (' · added column' + (customHeaders.length>1?'s: ':': ') + customHeaders.join(', ')) : '';
-      toast('Loaded ' + parsed.length + ' attendees' + extraNote);
+      const splitNote = (!firstHeader && !lastHeader && nameHeader) ? ' · split single name column — double-check anyone with a multi-word last name' : '';
+      toast('Loaded ' + parsed.length + ' attendees' + extraNote + splitNote);
     },
     error: function(){ toast('Could not read that CSV'); }
   });
@@ -878,7 +905,7 @@ function findAttendeeMatch(name, company){
   if(!n) return null;
   let best = null, bestScore = 0;
   for(const a of State.attendees){
-    const an = norm(a.name);
+    const an = norm(attendeeFullName(a));
     if(!an) continue;
     let score = 0;
     if(an === n) score = 100;
@@ -936,7 +963,7 @@ function renderLeadsList(){
         <div style="text-align:right;">${(!l.email && !l.phone) ? '<span class="badge badge-red">No contact</span>' : (l.matched ? '<span class="badge badge-teal">Matched</span>' : '')}</div>
       </div>
       <div class="meta" style="margin-top:6px;">${l.email ? '✉ '+esc(l.email)+'&nbsp;&nbsp;' : ''}${l.phone ? '☎ '+esc(l.phone) : ''}</div>
-      <div class="meta">Scanned by ${esc(l.scannedBy)||'—'} · ${fmtTime(l.savedAt)}${l.currentSoftware ? ' · currently on '+esc(l.currentSoftware) : ''}</div>
+      <div class="meta">Scanned by ${esc(l.scannedBy)||'—'} · ${fmtTime(l.savedAt)}${l.currentSoftware ? ' · currently on '+esc(l.currentSoftware) : ''}${l.contactSource==='web-search' ? ' · <span style="color:var(--red);">contact found via web — verify</span>' : ''}</div>
       <div class="actions">
         <button class="btn btn-outline btn-sm" onclick="editLead('${l._key}')">Edit</button>
         <button class="btn btn-danger btn-sm" onclick="deleteLead('${l._key}')">Delete</button>
@@ -964,7 +991,7 @@ document.getElementById('btnExportCsv').onclick = () => {
       'First Name': firstName, 'Last Name': lastName || 'Unknown', 'Company': l.company||'', 'Title': l.title||'',
       'Email': l.email||'', 'Phone': l.phone||'', 'Lead Source': 'Conference — '+evName, 'Event': evName,
       'Scanned By': l.scannedBy||'', 'Scanned Date': l.savedAt ? new Date(l.savedAt).toISOString() : '',
-      'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Current Software': l.currentSoftware||'', 'Description': l.notes||'',
+      'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Current Software': l.currentSoftware||'', 'Contact Source': l.contactSource||'', 'Description': l.notes||'',
     };
   });
   const csv = Papa.unparse(rows);
@@ -1137,7 +1164,7 @@ function openReview(lead, existingKey){
     matchArea.innerHTML = `
       <div class="match-chip">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4AA89A" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg>
-        <div class="txt"><b>${match.confidence==='exact'?'Attendee list match':'Possible attendee match'}</b>${esc(a.name)}${a.company?' · '+esc(a.company):''}</div>
+        <div class="txt"><b>${match.confidence==='exact'?'Attendee list match':'Possible attendee match'}</b>${esc(attendeeFullName(a))}${a.company?' · '+esc(a.company):''}</div>
         <button class="btn btn-teal btn-sm" onclick="applyAttendeeMatch()">Use this</button>
       </div>`;
     State.pendingLead._suggestedMatch = a;
@@ -1162,8 +1189,8 @@ function openReview(lead, existingKey){
 function applyAttendeeMatch(silent){
   const a = State.pendingLead && State.pendingLead._suggestedMatch;
   if(!a) return;
-  if(!document.getElementById('f_email').value) document.getElementById('f_email').value = a.email || '';
-  if(!document.getElementById('f_phone').value) document.getElementById('f_phone').value = a.phone || '';
+  if(!document.getElementById('f_email').value){ document.getElementById('f_email').value = a.email || ''; if(a.email) State.pendingLead.contactSource = 'attendee-list'; }
+  if(!document.getElementById('f_phone').value){ document.getElementById('f_phone').value = a.phone || ''; if(a.phone) State.pendingLead.contactSource = 'attendee-list'; }
   if(!document.getElementById('f_company').value) document.getElementById('f_company').value = a.company || '';
   State.pendingLead.matched = true;
   updateContactAlert();
@@ -1176,7 +1203,96 @@ function updateContactAlert(){
   const missing = !email && !phone;
   document.getElementById('f_email_wrap').classList.toggle('missing', missing);
   document.getElementById('f_phone_wrap').classList.toggle('missing', missing);
-  area.innerHTML = missing ? `<div class="alert-box"><svg viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg><div>No email or phone yet — while they're still standing here, grab at least one before saving.</div></div>` : '';
+  if(!missing){ area.innerHTML = ''; return; }
+  // Don't rebuild the box while a search is in flight — that would replace the
+  // disabled "Searching…" button with a fresh enabled one, letting someone
+  // double-fire the search, while the original promise still updates a button
+  // that's no longer attached to the page.
+  if(document.getElementById('btnWebSearchContact') && document.getElementById('btnWebSearchContact').disabled) return;
+  const hasKey = !!localStorage.getItem(LS_APIKEY);
+  area.innerHTML = `<div class="alert-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+      <div style="flex:1;">
+        No email or phone yet — while they're still standing here, grab at least one before saving.
+        ${hasKey
+          ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" id="btnWebSearchContact">Search the web for contact info</button></div><div id="webSearchStatus" class="hint" style="margin-top:4px;"></div>`
+          : `<div class="hint" style="margin-top:6px;">Add an Anthropic API key under Setup to enable a web lookup here (already checked the attendee list — nothing there either).</div>`}
+      </div>
+    </div>`;
+  if(hasKey){
+    document.getElementById('btnWebSearchContact').onclick = performWebContactSearch;
+  }
+}
+function performWebContactSearch(){
+  const btn = document.getElementById('btnWebSearchContact');
+  const status = document.getElementById('webSearchStatus');
+  const name = document.getElementById('f_name').value.trim();
+  if(!name){ toast('Add a name first'); return; }
+  const company = document.getElementById('f_company').value.trim();
+  const title = document.getElementById('f_title').value.trim();
+  const targetLead = State.pendingLead; // guard: bail if the person navigates away mid-search
+  btn.disabled = true; btn.textContent = 'Searching the web…';
+  status.textContent = '';
+  searchWebForContact(name, company, title).then(result => {
+    if(State.pendingLead !== targetLead) return; // they closed/switched leads before this resolved
+    if(!result || (!result.email && !result.phone)){
+      btn.disabled = false; btn.textContent = 'Search the web for contact info';
+      status.textContent = 'No public contact info found with confidence — enter it manually.';
+      return;
+    }
+    let filledAny = false;
+    if(result.email && !document.getElementById('f_email').value){ document.getElementById('f_email').value = result.email; filledAny = true; }
+    if(result.phone && !document.getElementById('f_phone').value){ document.getElementById('f_phone').value = result.phone; filledAny = true; }
+    if(filledAny){
+      State.pendingLead.contactSource = 'web-search';
+      updateContactAlert(); // will now render as "not missing" and clear this box
+      toast('Found via web search (' + (result.sourceNote||'public source') + ') — verify before relying on it');
+    } else {
+      btn.disabled = false; btn.textContent = 'Search the web for contact info';
+      status.textContent = 'Found something, but those fields were already filled in.';
+    }
+  }).catch(err => {
+    if(State.pendingLead !== targetLead) return;
+    console.error(err);
+    btn.disabled = false; btn.textContent = 'Search the web for contact info';
+    status.textContent = 'Search failed — check connection/API key and try again.';
+  });
+}
+async function searchWebForContact(name, company, title){
+  const apiKey = localStorage.getItem(LS_APIKEY);
+  if(!apiKey) return null;
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type':'application/json', 'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6', max_tokens: 700,
+      tools: [{type:'web_search_20250305', name:'web_search'}],
+      messages: [{ role:'user', content:
+        `Find a publicly listed work email and/or phone number for "${name}"` +
+        (title ? `, who holds the title "${title}"` : '') +
+        (company ? ` at "${company}"` : '') +
+        `. This is a U.S. county or local government office — look for official .gov directory pages, ` +
+        `county staff listings, or other clearly authoritative public sources. Do not guess, fabricate, or use ` +
+        `an unrelated person who happens to share the name. If you can't confidently confirm it's the same ` +
+        `person at the same organization, leave the fields blank rather than guessing. Respond with ONLY raw ` +
+        `JSON, no markdown fences, no explanation, in exactly this shape: {"email":"","phone":"","sourceNote":""}. ` +
+        `sourceNote should be under 12 words describing where it was found (e.g. "county clerk staff directory ` +
+        `page"), or blank if nothing was found.`
+      }]
+    })
+  });
+  if(!resp.ok){ const t = await resp.text().catch(()=>''); throw new Error('API error '+resp.status+' '+t.slice(0,200)); }
+  const data = await resp.json();
+  const textBlocks = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text);
+  if(!textBlocks.length) throw new Error('No text in response');
+  const clean = textBlocks.join('\n').replace(/```json|```/g,'').trim();
+  // Model may still wrap a sentence or two around the JSON despite instructions — grab the {...} span defensively.
+  const braceMatch = clean.match(/\{[\s\S]*\}/);
+  const obj = JSON.parse(braceMatch ? braceMatch[0] : clean);
+  return { email: obj.email||'', phone: obj.phone||'', sourceNote: obj.sourceNote||'' };
 }
 ['f_email','f_phone'].forEach(id => document.getElementById(id).addEventListener('input', updateContactAlert));
 function closeReview(){ State.pendingLead = null; switchTab('scan'); }
@@ -1192,6 +1308,7 @@ document.getElementById('btnSaveLead').onclick = async () => {
     name, company: document.getElementById('f_company').value.trim(), title: document.getElementById('f_title').value.trim(),
     email, phone, notes: document.getElementById('f_notes').value.trim(),
     currentSoftware: document.getElementById('f_software').value,
+    contactSource: (State.pendingLead && State.pendingLead.contactSource) || (email||phone ? 'badge' : ''),
     source: (State.pendingLead && State.pendingLead.source) || 'manual',
     matched: !!(State.pendingLead && State.pendingLead.matched),
     scannedBy: State.workerName || 'Unknown',

@@ -153,6 +153,7 @@
 <body>
 
 <div id="topbar">
+  <div id="brandClickTarget" onclick="switchTab('scan')" style="display:flex;align-items:center;gap:10px;cursor:pointer;-webkit-tap-highlight-color:transparent;">
   <svg class="logo-mark" viewBox="0 0 120 130" xmlns="http://www.w3.org/2000/svg">
     <g>
       <path d="M60 20c22 0 36 16 36 40 0 26-14 44-36 44S24 86 24 60c0-24 14-40 36-40z" fill="#1d3a66"/>
@@ -169,6 +170,7 @@
     </g>
   </svg>
   <div class="brand"><b>Compass Leads</b><span id="workerLabelTop">—</span></div>
+  </div>
   <div id="eventPill" onclick="switchTab('events')"><span id="syncDot"></span><span id="eventPillText">No event set</span></div>
 </div>
 
@@ -213,17 +215,7 @@
       <div class="field" id="f_email_wrap"><label class="field-label">Email</label><input type="email" id="f_email" placeholder="name@agency.gov"></div>
       <div class="field" id="f_phone_wrap"><label class="field-label">Phone</label><input type="tel" id="f_phone" placeholder="(555) 555-0100"></div>
       <div class="field"><label class="field-label">Current software (ask, don't guess)</label>
-        <select id="f_software">
-          <option value="">— not asked / not mentioned —</option>
-          <option>Catalis (existing customer)</option>
-          <option>Tyler Technologies</option>
-          <option>Journal Technologies</option>
-          <option>Fidlar Technologies</option>
-          <option>Simplifile</option>
-          <option>Homegrown / in-house system</option>
-          <option>Paper / no system</option>
-          <option>Other — see notes</option>
-        </select>
+        <select id="f_software"><option value="">— not asked / not mentioned —</option></select>
       </div>
       <div class="field"><label class="field-label">Notes</label><textarea id="f_notes" placeholder="Interested in Benchmark integration…"></textarea></div>
       <div class="hint" id="f_source">Source: manual entry</div>
@@ -247,16 +239,17 @@
   <div class="view" id="view-attendees">
     <h2 class="section-title">Attendee list</h2>
     <div class="card">
-      <p style="margin:0 0 10px;font-size:13px;color:var(--ink-soft);">Upload the conference attendee list (CSV — name, email, phone, company columns, any order). Scanned badges are matched against this to fill in missing contact info.</p>
+      <p style="margin:0 0 10px;font-size:13px;color:var(--ink-soft);">Upload the conference attendee list (any CSV). Name, company, email, and phone columns get matched automatically however they're labeled; anything else in the file becomes its own column here.</p>
       <input type="file" id="attendeeCsvInput" accept=".csv,text/csv" style="margin-bottom:8px;">
       <div class="row">
         <button class="btn btn-outline grow btn-sm" onclick="document.getElementById('attendeeCsvInput').click()">Upload CSV</button>
         <button class="btn btn-outline grow btn-sm" onclick="addAttendeeRow()">+ Add row</button>
+        <button class="btn btn-outline grow btn-sm" onclick="addCustomColumn()">+ Add column</button>
       </div>
     </div>
     <div class="card" style="overflow-x:auto;">
       <table class="at-table" id="attendeeTable">
-        <thead><tr><th>Name</th><th>Company</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+        <thead><tr id="attendeeTheadRow"></tr></thead>
         <tbody id="attendeeTbody"></tbody>
       </table>
       <div class="empty-state" id="attendeeEmpty" style="display:none;padding:24px 8px;"><b>No attendee list yet</b>Upload a CSV above, or scans will just use what's on the badge.</div>
@@ -282,6 +275,16 @@
       </div>
       <button class="btn btn-primary btn-block" id="btnSaveFirebaseConfig">Save & connect</button>
       <div class="hint" id="firebaseStatusLine" style="margin-top:8px;"></div>
+    </div>
+    <h2 class="section-title">Competitors / current-software list</h2>
+    <div class="card">
+      <p>These populate the "Current software" dropdown on every lead. Shared with the whole team — add one
+      here and everyone sees it within a few seconds.</p>
+      <div id="competitorListWrap" style="margin-bottom:10px;"></div>
+      <div class="row">
+        <input type="text" id="newCompetitorInput" placeholder="e.g. Tyler Technologies" class="grow">
+        <button class="btn btn-primary btn-sm" id="btnAddCompetitor">Add</button>
+      </div>
     </div>
     <h2 class="section-title">Badge photo reading (optional)</h2>
     <div class="card">
@@ -392,6 +395,8 @@ const State = {
   events: [],
   activeEventId: null,
   attendees: [],
+  attendeeColumns: [{key:'name',label:'Name'},{key:'company',label:'Company'},{key:'email',label:'Email'},{key:'phone',label:'Phone'}],
+  competitors: [],
   leads: {},              // docId -> lead
   qrScanner: null,
   camAvailable: true,
@@ -402,6 +407,47 @@ const State = {
   unsubMeta: null,
   pendingLead: null,
 };
+
+/* ---------- competitors / current-software list (global, shared across all events) ---------- */
+const DEFAULT_COMPETITORS = ['Tyler Technologies','Journal Technologies','Fidlar Technologies','Simplifile'];
+const SOFTWARE_FIXED_TAIL = ['Catalis (existing customer)','Homegrown / in-house system','Paper / no system','Other — see notes'];
+function subscribeCompetitors(){
+  State.db.collection('meta').doc('competitors').onSnapshot(doc => {
+    if(doc.exists && Array.isArray(doc.data().list)){
+      State.competitors = doc.data().list;
+    } else {
+      State.competitors = DEFAULT_COMPETITORS.slice();
+      State.db.collection('meta').doc('competitors').set({list: State.competitors}).catch(()=>{});
+    }
+    renderCompetitorManageList();
+  }, err => console.error('competitors snapshot error', err));
+}
+function renderCompetitorManageList(){
+  const wrap = document.getElementById('competitorListWrap');
+  if(!wrap) return;
+  if(!State.competitors.length){ wrap.innerHTML = '<div class="hint">None added yet.</div>'; return; }
+  wrap.innerHTML = State.competitors.map((c,i) =>
+    `<span class="badge badge-gray" style="margin:0 6px 6px 0;">${esc(c)} <button onclick="removeCompetitor(${i})" style="background:none;border:none;color:var(--red);font-weight:800;cursor:pointer;margin-left:3px;">✕</button></span>`
+  ).join('');
+}
+async function removeCompetitor(i){
+  State.competitors.splice(i,1);
+  await State.db.collection('meta').doc('competitors').set({list: State.competitors});
+}
+document.getElementById('btnAddCompetitor').onclick = async () => {
+  const input = document.getElementById('newCompetitorInput');
+  const v = input.value.trim();
+  if(!v) return;
+  if(State.competitors.some(c => c.toLowerCase()===v.toLowerCase())){ toast('Already in the list'); input.value=''; return; }
+  State.competitors.push(v);
+  input.value = '';
+  await State.db.collection('meta').doc('competitors').set({list: State.competitors});
+};
+function renderSoftwareSelectOptions(){
+  const sel = document.getElementById('f_software');
+  const all = State.competitors.concat(SOFTWARE_FIXED_TAIL);
+  sel.innerHTML = '<option value="">— not asked / not mentioned —</option>' + all.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
+}
 
 /* ---------- worker identity ---------- */
 function promptWorkerName(force){
@@ -593,6 +639,7 @@ function loadEventsAndMeta(){
     State.events = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
     updateEventPill();
     renderEventsList();
+    refreshAttendeeColumnsFromActiveEvent(); // event doc (and its column defs) may have just arrived/changed
   }, err => console.error('events snapshot error', err));
 
   if(State.unsubMeta) State.unsubMeta();
@@ -650,6 +697,7 @@ function subscribeToActiveEvent(){
   if(State.unsubAttendees){ State.unsubAttendees(); State.unsubAttendees = null; }
   State.leads = {};
   State.attendees = [];
+  refreshAttendeeColumnsFromActiveEvent();
   renderLeadsList(); renderAttendeeTable(); updateLeadTabCount();
   if(!State.activeEventId) return;
 
@@ -670,20 +718,71 @@ function subscribeToActiveEvent(){
     }, err => console.error('attendees snapshot error', err));
 }
 
-/* ---------- attendees ---------- */
+/* ---------- attendees: dynamic, file-driven columns ---------- */
+// The four canonical fields always exist and drive matching/CSV export; anything
+// else in an uploaded file (or added by hand) becomes its own column, persisted
+// on the event doc so every rep's table stays in sync, not just the row data.
+const CANONICAL_COLS = [
+  {key:'name', label:'Name'}, {key:'company', label:'Company'},
+  {key:'email', label:'Email'}, {key:'phone', label:'Phone'},
+];
+function sanitizeColKey(label, existingKeys){
+  let base = label.toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  if(!base) base = 'field';
+  let key = base, i = 2;
+  while(existingKeys.includes(key)){ key = base + '_' + i; i++; }
+  return key;
+}
+function getOrCreateColumn(label){
+  label = label.trim();
+  const existing = State.attendeeColumns.find(c => c.label.toLowerCase() === label.toLowerCase());
+  if(existing) return existing.key;
+  const key = sanitizeColKey(label, State.attendeeColumns.map(c=>c.key));
+  State.attendeeColumns.push({key, label});
+  return key;
+}
+function refreshAttendeeColumnsFromActiveEvent(){
+  const ev = State.events.find(e=>e.id===State.activeEventId);
+  State.attendeeColumns = (ev && Array.isArray(ev.attendeeColumns) && ev.attendeeColumns.length)
+    ? ev.attendeeColumns.slice() : CANONICAL_COLS.slice();
+  renderAttendeeTable();
+}
+async function persistAttendeeColumns(){
+  if(!State.activeEventId) return;
+  await State.db.collection('events').doc(State.activeEventId).set({attendeeColumns: State.attendeeColumns}, {merge:true}).catch(err=>console.error(err));
+}
+function addCustomColumn(){
+  const label = (prompt('New column name (e.g. "State", "Registration Type")') || '').trim();
+  if(!label) return;
+  if(State.attendeeColumns.some(c => c.label.toLowerCase() === label.toLowerCase())){ toast('That column already exists'); return; }
+  getOrCreateColumn(label);
+  renderAttendeeTable();
+  persistAttendeeColumns();
+  toast('Column added — fill in rows, then Save');
+}
+function removeCustomColumn(key){
+  if(!confirm('Remove this column? Values already saved for it stay in the database, they just stop showing here.')) return;
+  State.attendeeColumns = State.attendeeColumns.filter(c => c.key !== key);
+  renderAttendeeTable();
+  persistAttendeeColumns();
+}
 function renderAttendeeTable(){
+  const theadRow = document.getElementById('attendeeTheadRow');
   const tbody = document.getElementById('attendeeTbody');
   const empty = document.getElementById('attendeeEmpty');
+  const canonicalKeys = new Set(CANONICAL_COLS.map(c=>c.key));
+  theadRow.innerHTML = State.attendeeColumns.map(c =>
+    `<th>${esc(c.label)}${canonicalKeys.has(c.key) ? '' : ` <button onclick="removeCustomColumn('${c.key}')" title="Remove column" style="background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:11px;">✕</button>`}</th>`
+  ).join('') + `<th></th>`;
   if(!State.attendees.length){ tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display = 'none';
-  tbody.innerHTML = State.attendees.map((a) => `
-    <tr>
-      <td><input type="text" value="${esc(a.name)}" onchange="updateAttendeeField('${a.id}','name',this.value)"></td>
-      <td><input type="text" value="${esc(a.company)}" onchange="updateAttendeeField('${a.id}','company',this.value)"></td>
-      <td><input type="email" value="${esc(a.email)}" onchange="updateAttendeeField('${a.id}','email',this.value)"></td>
-      <td><input type="tel" value="${esc(a.phone)}" onchange="updateAttendeeField('${a.id}','phone',this.value)"></td>
-      <td><button class="btn-icon btn-outline" style="width:32px;height:32px;" onclick="removeAttendeeRow('${a.id}')" aria-label="Remove">✕</button></td>
-    </tr>`).join('');
+  tbody.innerHTML = State.attendees.map((a) => {
+    const cells = State.attendeeColumns.map(c => {
+      const type = c.key==='email' ? 'email' : c.key==='phone' ? 'tel' : 'text';
+      return `<td><input type="${type}" value="${esc(a[c.key])}" onchange="updateAttendeeField('${a.id}','${c.key}',this.value)"></td>`;
+    }).join('');
+    return `<tr>${cells}<td><button class="btn-icon btn-outline" style="width:32px;height:32px;" onclick="removeAttendeeRow('${a.id}')" aria-label="Remove">✕</button></td></tr>`;
+  }).join('');
 }
 function updateAttendeeField(id, field, val){
   const a = State.attendees.find(x=>x.id===id);
@@ -699,7 +798,9 @@ async function removeAttendeeRow(id){
   await State.db.collection('events').doc(State.activeEventId).collection('attendees').doc(id).delete();
 }
 function addAttendeeRow(){
-  State.attendees.push({id:'local-'+uid(), name:'', company:'', email:'', phone:''});
+  const row = {id:'local-'+uid()};
+  State.attendeeColumns.forEach(c => { row[c.key] = ''; });
+  State.attendees.push(row);
   renderAttendeeTable();
 }
 document.getElementById('btnSaveAttendees').onclick = async () => {
@@ -712,11 +813,14 @@ document.getElementById('btnSaveAttendees').onclick = async () => {
     let ops = 0;
     for(const a of State.attendees){
       const ref = a.id.startsWith('local-') ? col.doc() : col.doc(a.id);
-      batch.set(ref, {name:a.name||'', company:a.company||'', email:a.email||'', phone:a.phone||''});
+      const data = {};
+      State.attendeeColumns.forEach(c => { data[c.key] = a[c.key] || ''; });
+      batch.set(ref, data);
       ops++;
       if(ops >= 450){ await batch.commit(); batch = State.db.batch(); ops = 0; } // stay under Firestore's 500-op batch limit
     }
     if(ops>0) await batch.commit();
+    await persistAttendeeColumns();
     toast('Attendee list saved (' + State.attendees.length + ' people)');
   }catch(err){ console.error(err); toast('Save failed — check connection'); }
   btn.disabled = false; btn.textContent = 'Save attendee list';
@@ -727,24 +831,40 @@ document.getElementById('attendeeCsvInput').addEventListener('change', function(
   Papa.parse(file, {
     header: true, skipEmptyLines: true,
     complete: function(res){
-      const pick = (row, keys) => {
-        for(const k of Object.keys(row)){
-          const lk = k.toLowerCase();
-          if(keys.some(want => lk.includes(want))) return (row[k]||'').trim();
-        }
-        return '';
-      };
-      const parsed = res.data.map(row => ({
-        id: 'local-'+uid(),
-        name: pick(row,['name']) || [pick(row,['first']), pick(row,['last'])].filter(Boolean).join(' '),
-        company: pick(row,['company','agency','organization']),
-        email: pick(row,['email']),
-        phone: pick(row,['phone','mobile','tel']),
-      })).filter(r => r.name);
+      const headers = res.meta.fields || [];
+      const lower = headers.map(h=>h.toLowerCase());
+      const findHeader = patterns => headers.find((h,i) => patterns.some(p => lower[i].includes(p)));
+      const nameHeader = findHeader(['full name','name']);
+      const firstHeader = !nameHeader ? findHeader(['first']) : null;
+      const lastHeader = !nameHeader ? findHeader(['last']) : null;
+      const companyHeader = findHeader(['company','agency','organization']);
+      const emailHeader = findHeader(['email']);
+      const phoneHeader = findHeader(['phone','mobile','tel']);
+      const consumed = new Set([nameHeader,firstHeader,lastHeader,companyHeader,emailHeader,phoneHeader].filter(Boolean));
+      const customHeaders = headers.filter(h => !consumed.has(h));
+      // Register any not-yet-seen columns from this file before mapping rows, so
+      // every row (even ones missing a value) gets a consistent set of keys.
+      const headerToKey = {};
+      customHeaders.forEach(h => { headerToKey[h] = getOrCreateColumn(h); });
+
+      const parsed = res.data.map(row => {
+        const rec = {
+          id: 'local-'+uid(),
+          name: nameHeader ? (row[nameHeader]||'').trim() : [firstHeader&&row[firstHeader], lastHeader&&row[lastHeader]].filter(Boolean).join(' ').trim(),
+          company: companyHeader ? (row[companyHeader]||'').trim() : '',
+          email: emailHeader ? (row[emailHeader]||'').trim() : '',
+          phone: phoneHeader ? (row[phoneHeader]||'').trim() : '',
+        };
+        customHeaders.forEach(h => { rec[headerToKey[h]] = (row[h]||'').trim(); });
+        return rec;
+      }).filter(r => r.name);
+
       if(!parsed.length){ toast('No rows found — check the CSV headers'); return; }
       State.attendees = State.attendees.concat(parsed);
       renderAttendeeTable();
-      toast('Loaded ' + parsed.length + ' attendees — tap Save to sync to the team');
+      persistAttendeeColumns();
+      const extraNote = customHeaders.length ? (' · added column' + (customHeaders.length>1?'s: ':': ') + customHeaders.join(', ')) : '';
+      toast('Loaded ' + parsed.length + ' attendees' + extraNote);
     },
     error: function(){ toast('Could not read that CSV'); }
   });
@@ -1005,6 +1125,7 @@ function openReview(lead, existingKey){
   document.getElementById('f_email').value = State.pendingLead.email || '';
   document.getElementById('f_phone').value = State.pendingLead.phone || '';
   document.getElementById('f_notes').value = State.pendingLead.notes || '';
+  renderSoftwareSelectOptions();
   document.getElementById('f_software').value = State.pendingLead.currentSoftware || '';
   document.getElementById('f_source').textContent = 'Source: ' + ({qr:'QR / barcode scan', photo:'photo (AI-read)', manual:'manual entry'}[State.pendingLead.source] || 'manual entry');
 
@@ -1095,6 +1216,7 @@ document.getElementById('btnSaveLead').onclick = async () => {
 function boot(){
   promptWorkerName(false);
   loadEventsAndMeta();
+  subscribeCompetitors();
   switchTab('scan');
 }
 (function init(){

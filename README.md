@@ -26,6 +26,8 @@ matches what's in this repo before assuming a device is up to date)
 - **Duplicate-scan detection** — warns if someone else on the team already scanned this name
 - **Editable competitor list** — the "current software" dropdown is a shared, editable list, not
   hardcoded
+- **Editable engagement-reason list** — same pattern for "why did this person stop by" (defaults:
+  Saw a demo, Existing Customer, Interested in Learning more, Drawing registrant)
 - **Multiple events** — switch, rename, or add events; everything scanned ties to whichever
   event is active, shared across every phone
 - **Salesforce-ready export** — CSV with First/Last Name, Company, Title, Email, Phone, Lead
@@ -106,12 +108,13 @@ automatically.
 ```
 events/{eventId}                        { name, createdAt, attendeeColumns: [{key,label}, ...] }
 events/{eventId}/leads/{leadId}          { name, company, title, email, phone, notes,
-                                            currentSoftware, contactSource, source, matched,
-                                            scannedBy, savedAt }
+                                            currentSoftware, reasonForEngagement, contactSource,
+                                            source, matched, scannedBy, savedAt }
 events/{eventId}/attendees/{attendeeId}  { firstName, lastName, company, email, phone, ...any
                                             custom columns from an uploaded CSV }
 meta/shared                              { activeEventId }
 meta/competitors                         { list: [...] }
+meta/engagementReasons                   { list: [...] }
 ```
 
 Attendee columns are file-driven: the four canonical fields (First Name, Last Name, Company,

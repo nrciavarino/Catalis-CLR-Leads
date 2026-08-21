@@ -214,6 +214,9 @@
       </div>
       <div class="field" id="f_email_wrap"><label class="field-label">Email</label><input type="email" id="f_email" placeholder="name@agency.gov"></div>
       <div class="field" id="f_phone_wrap"><label class="field-label">Phone</label><input type="tel" id="f_phone" placeholder="(555) 555-0100"></div>
+      <div class="field"><label class="field-label">Reason for engagement</label>
+        <select id="f_reason"><option value="">— not specified —</option></select>
+      </div>
       <div class="field"><label class="field-label">Current software (ask, don't guess)</label>
         <select id="f_software"><option value="">— not asked / not mentioned —</option></select>
       </div>
@@ -287,6 +290,16 @@
         <button class="btn btn-primary btn-sm" id="btnAddCompetitor">Add</button>
       </div>
     </div>
+    <h2 class="section-title">Reason for engagement options</h2>
+    <div class="card">
+      <p>These populate the "Reason for engagement" dropdown on every lead. Shared with the whole team, same
+      as the software list above.</p>
+      <div id="engagementReasonListWrap" style="margin-bottom:10px;"></div>
+      <div class="row">
+        <input type="text" id="newEngagementReasonInput" placeholder="e.g. Interested in a specific product" class="grow">
+        <button class="btn btn-primary btn-sm" id="btnAddEngagementReason">Add</button>
+      </div>
+    </div>
     <h2 class="section-title">Badge photo reading (optional)</h2>
     <div class="card">
       <p>If a badge has no QR code, "No QR — take photo" can have Claude read the name/company/email off the photo automatically. This calls the Anthropic API directly from the phone using your own API key — it never touches Claude.ai. Leave blank to skip this and just type badges in manually.</p>
@@ -305,7 +318,7 @@
       password. Anyone with the link can read/write your leads and spend against your API key.</p>
     </div>
     <div class="card" style="font-size:12px;color:var(--ink-soft);text-align:center;">
-      Compass Leads <span id="setupVersionLine"></span>
+      Compass Leads <span id="setupVersionLine"></span> · <a href="README.md" target="_blank" rel="noopener" style="color:var(--teal);">View README</a>
     </div>
   </div>
 
@@ -379,7 +392,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.0.2'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.1.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -402,6 +415,7 @@ const State = {
   attendees: [],
   attendeeColumns: [{key:'firstName',label:'First Name'},{key:'lastName',label:'Last Name'},{key:'company',label:'Company'},{key:'email',label:'Email'},{key:'phone',label:'Phone'}],
   competitors: [],
+  engagementReasons: [],
   leads: {},              // docId -> lead
   qrScanner: null,
   camAvailable: true,
@@ -411,12 +425,14 @@ const State = {
   unsubEvents: null,
   unsubMeta: null,
   unsubCompetitors: null,
+  unsubEngagementReasons: null,
   pendingLead: null,
 };
 
 /* ---------- competitors / current-software list (global, shared across all events) ---------- */
 const DEFAULT_COMPETITORS = ['Tyler Technologies','Journal Technologies','Fidlar Technologies','Simplifile'];
 const SOFTWARE_FIXED_TAIL = ['Catalis (existing customer)','Homegrown / in-house system','Paper / no system','Other — see notes'];
+const DEFAULT_ENGAGEMENT_REASONS = ['Saw a demo','Existing Customer','Interested in Learning more','Drawing registrant'];
 function subscribeCompetitors(){
   if(State.unsubCompetitors){ State.unsubCompetitors(); State.unsubCompetitors = null; }
   State.unsubCompetitors = State.db.collection('meta').doc('competitors').onSnapshot(doc => {
@@ -454,6 +470,45 @@ function renderSoftwareSelectOptions(){
   const sel = document.getElementById('f_software');
   const all = State.competitors.concat(SOFTWARE_FIXED_TAIL);
   sel.innerHTML = '<option value="">— not asked / not mentioned —</option>' + all.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
+}
+
+/* ---------- engagement reasons (global, shared across all events) ---------- */
+function subscribeEngagementReasons(){
+  if(State.unsubEngagementReasons){ State.unsubEngagementReasons(); State.unsubEngagementReasons = null; }
+  State.unsubEngagementReasons = State.db.collection('meta').doc('engagementReasons').onSnapshot(doc => {
+    if(doc.exists && Array.isArray(doc.data().list)){
+      State.engagementReasons = doc.data().list;
+    } else {
+      State.engagementReasons = DEFAULT_ENGAGEMENT_REASONS.slice();
+      State.db.collection('meta').doc('engagementReasons').set({list: State.engagementReasons}).catch(()=>{});
+    }
+    renderEngagementReasonManageList();
+  }, err => console.error('engagement reasons snapshot error', err));
+}
+function renderEngagementReasonManageList(){
+  const wrap = document.getElementById('engagementReasonListWrap');
+  if(!wrap) return;
+  if(!State.engagementReasons.length){ wrap.innerHTML = '<div class="hint">None added yet.</div>'; return; }
+  wrap.innerHTML = State.engagementReasons.map((r,i) =>
+    `<span class="badge badge-gray" style="margin:0 6px 6px 0;">${esc(r)} <button onclick="removeEngagementReason(${i})" style="background:none;border:none;color:var(--red);font-weight:800;cursor:pointer;margin-left:3px;">✕</button></span>`
+  ).join('');
+}
+async function removeEngagementReason(i){
+  State.engagementReasons.splice(i,1);
+  await State.db.collection('meta').doc('engagementReasons').set({list: State.engagementReasons});
+}
+document.getElementById('btnAddEngagementReason').onclick = async () => {
+  const input = document.getElementById('newEngagementReasonInput');
+  const v = input.value.trim();
+  if(!v) return;
+  if(State.engagementReasons.some(r => r.toLowerCase()===v.toLowerCase())){ toast('Already in the list'); input.value=''; return; }
+  State.engagementReasons.push(v);
+  input.value = '';
+  await State.db.collection('meta').doc('engagementReasons').set({list: State.engagementReasons});
+};
+function renderEngagementReasonSelectOptions(){
+  const sel = document.getElementById('f_reason');
+  sel.innerHTML = '<option value="">— not specified —</option>' + State.engagementReasons.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
 }
 
 /* ---------- worker identity ---------- */
@@ -596,7 +651,7 @@ document.getElementById('btnSaveFirebaseConfig').onclick = async () => {
   if(!cfg || !cfg.projectId){ status.textContent = 'That doesn\'t look like a valid Firebase config.'; return; }
   // Tear down old listeners before reconnecting to a (possibly different) project — and
   // null them out, not just call them, so a stale reference can't get invoked again later.
-  ['unsubLeads','unsubAttendees','unsubEvents','unsubMeta','unsubCompetitors'].forEach(key => {
+  ['unsubLeads','unsubAttendees','unsubEvents','unsubMeta','unsubCompetitors','unsubEngagementReasons'].forEach(key => {
     if(State[key]){ try{ State[key](); }catch(e){} State[key] = null; }
   });
   if(await connectFirebase(cfg, status)){
@@ -1008,7 +1063,7 @@ function renderLeadsList(){
         <div style="text-align:right;">${(!l.email && !l.phone) ? '<span class="badge badge-red">No contact</span>' : (l.matched ? '<span class="badge badge-teal">Matched</span>' : '')}</div>
       </div>
       <div class="meta" style="margin-top:6px;">${l.email ? '✉ '+esc(l.email)+'&nbsp;&nbsp;' : ''}${l.phone ? '☎ '+esc(l.phone) : ''}</div>
-      <div class="meta">Scanned by ${esc(l.scannedBy)||'—'} · ${fmtTime(l.savedAt)}${l.currentSoftware ? ' · currently on '+esc(l.currentSoftware) : ''}${l.contactSource==='web-search' ? ' · <span style="color:var(--red);">contact found via web — verify</span>' : ''}</div>
+      <div class="meta">Scanned by ${esc(l.scannedBy)||'—'} · ${fmtTime(l.savedAt)}${l.reasonForEngagement ? ' · '+esc(l.reasonForEngagement) : ''}${l.currentSoftware ? ' · currently on '+esc(l.currentSoftware) : ''}${l.contactSource==='web-search' ? ' · <span style="color:var(--red);">contact found via web — verify</span>' : ''}</div>
       <div class="actions">
         <button class="btn btn-outline btn-sm" onclick="editLead('${l._key}')">Edit</button>
         <button class="btn btn-danger btn-sm" onclick="deleteLead('${l._key}')">Delete</button>
@@ -1036,7 +1091,7 @@ document.getElementById('btnExportCsv').onclick = () => {
       'First Name': firstName, 'Last Name': lastName || 'Unknown', 'Company': l.company||'', 'Title': l.title||'',
       'Email': l.email||'', 'Phone': l.phone||'', 'Lead Source': 'Conference — '+evName, 'Event': evName,
       'Scanned By': l.scannedBy||'', 'Scanned Date': l.savedAt ? new Date(l.savedAt).toISOString() : '',
-      'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Current Software': l.currentSoftware||'', 'Contact Source': l.contactSource||'', 'Description': l.notes||'',
+      'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Reason for Engagement': l.reasonForEngagement||'', 'Current Software': l.currentSoftware||'', 'Contact Source': l.contactSource||'', 'Description': l.notes||'',
     };
   });
   const csv = Papa.unparse(rows);
@@ -1199,6 +1254,8 @@ function openReview(lead, existingKey){
   document.getElementById('f_notes').value = State.pendingLead.notes || '';
   renderSoftwareSelectOptions();
   document.getElementById('f_software').value = State.pendingLead.currentSoftware || '';
+  renderEngagementReasonSelectOptions();
+  document.getElementById('f_reason').value = State.pendingLead.reasonForEngagement || '';
   document.getElementById('f_source').textContent = 'Source: ' + ({qr:'QR / barcode scan', photo:'photo (AI-read)', manual:'manual entry'}[State.pendingLead.source] || 'manual entry');
 
   const matchArea = document.getElementById('matchArea');
@@ -1357,6 +1414,7 @@ document.getElementById('btnSaveLead').onclick = async () => {
     name, company: document.getElementById('f_company').value.trim(), title: document.getElementById('f_title').value.trim(),
     email, phone, notes: document.getElementById('f_notes').value.trim(),
     currentSoftware: document.getElementById('f_software').value,
+    reasonForEngagement: document.getElementById('f_reason').value,
     contactSource: (State.pendingLead && State.pendingLead.contactSource) || (email||phone ? 'badge' : ''),
     source: (State.pendingLead && State.pendingLead.source) || 'manual',
     matched: !!(State.pendingLead && State.pendingLead.matched),
@@ -1383,6 +1441,7 @@ function boot(){
   promptWorkerName(false);
   loadEventsAndMeta();
   subscribeCompetitors();
+  subscribeEngagementReasons();
   switchTab('scan');
 }
 (async function init(){

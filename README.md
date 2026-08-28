@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.0.2` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.3.0` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -28,8 +28,16 @@ matches what's in this repo before assuming a device is up to date)
   hardcoded
 - **Editable engagement-reason list** — same pattern for "why did this person stop by" (defaults:
   Saw a demo, Existing Customer, Interested in Learning more, Drawing registrant)
-- **Multiple events** — switch, rename, or add events; everything scanned ties to whichever
-  event is active, shared across every phone
+- **Multiple events, per-device** — each phone stays on whichever event it picks until that rep
+  changes it, so reps at different conferences at the same time can each work their own event.
+  Reps who are both on the same event still share leads, attendees, and duplicate warnings live.
+  Add, rename, or delete events from the Events tab; a brand-new device with no choice yet falls
+  back to whatever event was most recently made active anywhere on the team
+- **In-app help** — a dedicated Help section in the Setup tab lists every topic below, and inline
+  "?" icons sit next to the ~9 controls reps are most likely to get stuck on (the event switcher,
+  photo reading, the sync dot, lead badges, CSV export, attendee-list matching, duplicate
+  warnings, web contact lookup, and the current-software field) — tap either to get a plain-
+  English explanation without leaving the screen
 - **Salesforce-ready export** — CSV with First/Last Name, Company, Title, Email, Phone, Lead
   Source, Contact Source, and more
 - **Installable** — "Add to Home Screen" on iOS/Android for an app-like icon, no App Store
@@ -117,6 +125,11 @@ meta/competitors                         { list: [...] }
 meta/engagementReasons                   { list: [...] }
 ```
 
+`meta/shared.activeEventId` is now only a **default** for a brand-new device that hasn't picked
+an event yet — each phone tracks its own active event locally (in that device's browser
+storage) once a rep makes a choice, and that choice sticks until they change it on their own
+device. It doesn't get overridden by other reps switching events on their phones.
+
 Attendee columns are file-driven: the four canonical fields (First Name, Last Name, Company,
 Email, Phone) always exist; anything else in an uploaded CSV becomes its own column,
 auto-registered on the event so every rep's table matches. Leads deliberately stay single-field
@@ -139,9 +152,10 @@ manually replace `index.html` on the host.
 - Firestore's test-mode rules let anyone with the project ID read/write the database, and expire
   after 30 days. Fine for a short conference as long as the URL and Firebase config aren't
   published anywhere public — treat it as an unlisted internal tool, not a locked-down one.
-- The Anthropic API key and Firebase config live in each device's browser storage
-  (`localStorage`) — clearing browsing data wipes them; re-connect via the setup link (bookmark
-  it) rather than re-pasting from scratch.
+- The Anthropic API key, Firebase config, and each device's active-event choice all live in that
+  device's browser storage (`localStorage`) — clearing browsing data wipes them; re-connect via
+  the setup link (bookmark it) rather than re-pasting from scratch, and re-pick the event from
+  the Events tab.
 - The one-tap setup link embeds both secrets in the URL itself. Share it privately; don't post it
   anywhere that gets logged or archived outside your control.
 

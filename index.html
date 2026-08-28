@@ -60,8 +60,26 @@
   .view{flex:1 1 auto;overflow-y:auto;display:none;padding:14px 14px calc(var(--tab-h) + 18px);-webkit-overflow-scrolling:touch;}
   .view.active{display:block;}
 
-  h2.section-title{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft);margin:18px 0 8px;font-weight:700;}
+  h2.section-title{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft);margin:18px 0 8px;font-weight:700;display:flex;align-items:center;gap:6px;}
   h2.section-title:first-child{margin-top:2px;}
+
+  /* ---- Help: inline "?" tips + dedicated Help section (Setup tab) ---- */
+  .help-q{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;
+    background:rgba(20,40,68,.08);color:var(--ink-soft);font-size:11px;font-weight:700;border:none;cursor:pointer;
+    flex:0 0 auto;padding:0;line-height:1;-webkit-tap-highlight-color:transparent;}
+  .help-q:active{background:rgba(20,40,68,.16);}
+  #helpOverlay{position:fixed;inset:0;background:rgba(20,40,68,.4);z-index:400;display:none;align-items:flex-end;justify-content:center;}
+  #helpOverlay.show{display:flex;}
+  #helpCard{background:var(--surface);border-radius:16px 16px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom));
+    max-width:480px;width:100%;box-shadow:var(--shadow-lg);}
+  #helpCard h3{margin:0 0 8px;font-size:15px;color:var(--ink);}
+  #helpCard p{margin:0;font-size:13.5px;color:var(--ink-soft);line-height:1.5;}
+  #helpCard button{margin-top:14px;}
+  .help-row{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;
+    border-bottom:1px solid var(--border);padding:11px 2px;font-size:13.5px;color:var(--ink);text-align:left;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;}
+  .help-row:last-child{border-bottom:none;}
+  .help-row-arrow{color:var(--ink-soft);font-size:15px;}
 
   .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;margin-bottom:12px;}
 
@@ -185,13 +203,15 @@
         <div class="scan-status" id="scanStatus">Point camera at badge QR code</div>
       </div>
     </div>
-    <div class="row wrap" style="margin-top:14px;">
+    <div class="row wrap" style="margin-top:14px;align-items:center;">
       <button class="btn btn-outline grow" id="btnToggleCam">Stop camera</button>
       <button class="btn btn-dark grow" id="btnTakePhoto">No QR — take photo</button>
+      <button type="button" class="help-q" onclick="showHelp('photoOcr')" aria-label="How does photo reading work?">?</button>
     </div>
     <input type="file" id="photoInput" accept="image/*" capture="environment">
     <div class="hint" style="margin-top:10px;text-align:center;" id="syncHint">
       Live sync assumes solid venue wifi. Leads save instantly and sync to the whole team within a second or two.
+      <button type="button" class="help-q" onclick="showHelp('syncDot')" aria-label="What does the sync dot mean?">?</button>
     </div>
     <div id="manualAddWrap" style="margin-top:14px;">
       <button class="btn btn-outline btn-block" onclick="openReview(null)">+ Enter a lead manually</button>
@@ -217,7 +237,7 @@
       <div class="field"><label class="field-label">Reason for engagement</label>
         <select id="f_reason"><option value="">— not specified —</option></select>
       </div>
-      <div class="field"><label class="field-label">Current software (ask, don't guess)</label>
+      <div class="field"><label class="field-label">Current software (ask, don't guess)<button type="button" class="help-q" onclick="showHelp('currentSoftware')" aria-label="Why does this matter?" style="margin-left:4px;">?</button></label>
         <select id="f_software"><option value="">— not asked / not mentioned —</option></select>
       </div>
       <div class="field"><label class="field-label">Notes</label><textarea id="f_notes" placeholder="Interested in Benchmark integration…"></textarea></div>
@@ -228,19 +248,23 @@
   </div>
 
   <div class="view" id="view-leads">
-    <h2 class="section-title">Leads for this event</h2>
+    <h2 class="section-title">Leads for this event<button type="button" class="help-q" onclick="showHelp('matchedBadge')" aria-label="What do the badges mean?">?</button></h2>
     <div class="card" style="padding:10px 12px;"><input type="text" id="leadSearch" placeholder="Search leads by name or company…"></div>
     <div class="row wrap" style="margin:8px 0 14px;">
       <span class="badge badge-brass" id="leadCountBadge">0 leads</span>
       <span class="badge badge-red" id="leadMissingBadge" style="display:none;">0 missing contact</span>
       <span class="hint" id="lastSyncedLabel" style="margin-left:auto;"></span>
     </div>
-    <button class="btn btn-teal btn-block" id="btnExportCsv" style="margin-bottom:14px;">Export Salesforce CSV</button>
+    <button class="btn btn-teal btn-block" id="btnExportCsv" style="margin-bottom:6px;">Export Salesforce CSV</button>
+    <div class="hint" style="text-align:center;margin-bottom:14px;">
+      <button type="button" class="help-q" onclick="showHelp('exportCsv')" aria-label="What's in the export?">?</button>
+      What's in this file?
+    </div>
     <div id="leadsListWrap"></div>
   </div>
 
   <div class="view" id="view-attendees">
-    <h2 class="section-title">Attendee list</h2>
+    <h2 class="section-title">Attendee list<button type="button" class="help-q" onclick="showHelp('attendeeCsv')" aria-label="How does column matching work?">?</button></h2>
     <div class="card">
       <p style="margin:0 0 10px;font-size:13px;color:var(--ink-soft);">Upload the conference attendee list (any CSV). Name, company, email, and phone columns get matched automatically however they're labeled; anything else in the file becomes its own column here.</p>
       <input type="file" id="attendeeCsvInput" accept=".csv,text/csv" style="margin-bottom:8px;">
@@ -262,7 +286,7 @@
   </div>
 
   <div class="view" id="view-events">
-    <h2 class="section-title">Events</h2>
+    <h2 class="section-title">Events<button type="button" class="help-q" onclick="showHelp('event')" aria-label="What does Active mean?">?</button></h2>
     <div id="eventsListWrap"></div>
     <div class="card">
       <div class="field"><label class="field-label">New event name</label><input type="text" id="newEventName" placeholder="APPA 2026 Annual Conference"></div>
@@ -271,6 +295,8 @@
   </div>
 
   <div class="view" id="view-setup">
+    <h2 class="section-title">Help</h2>
+    <div class="card" id="helpTopicsWrap" style="padding:4px 12px;"></div>
     <h2 class="section-title">Connection</h2>
     <div class="card">
       <p>Compass Leads stores everything in a Firestore database (Google's free-tier cloud database) so up to ~10 phones can read and write the same leads live. Paste your Firebase project config below — see the README that came with this app for the one-time project setup steps.</p>
@@ -347,6 +373,14 @@
   </button>
 </div>
 
+<div id="helpOverlay" onclick="if(event.target===this) hideHelp()">
+  <div id="helpCard">
+    <h3 id="helpTitle"></h3>
+    <p id="helpText"></p>
+    <button class="btn btn-outline btn-block" onclick="hideHelp()">Got it</button>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <!-- Blocking setup gate shown until a Firebase config is saved -->
@@ -392,13 +426,71 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.1.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.2.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
 const LS_FIREBASE = 'compassleads.firebaseConfig';
 const LS_APIKEY   = 'compassleads.apiKey';
 const LS_WORKER   = 'compassleads.workerName';
+const LS_ACTIVE_EVENT = 'compassleads.activeEventId'; // per-device: which event THIS phone is on
+
+/* ---------- Help (Medium tier: dedicated Help section + inline "?" tips) ---------- */
+const HELP_TOPICS = {
+  event: {
+    title: 'What does "Active" mean?',
+    text: 'Each phone now stays on whichever event you make active here until you change it — switching your event doesn\'t switch anyone else\'s. Reps who are both on the same event share leads and duplicate warnings live; switch to a different event and you stop seeing that one and start seeing the new one.'
+  },
+  photoOcr: {
+    title: 'No QR — take photo',
+    text: 'Use this when a badge has no scannable QR code. The photo goes to Claude (Anthropic\'s AI) using the API key set in Setup, which reads back whatever name, company, and email it can find. Nothing saves automatically — you still review and can edit everything before saving the lead.'
+  },
+  syncDot: {
+    title: 'Sync status dot',
+    text: 'The small dot by the event name is teal when your last save synced fine, and turns red if a save couldn\'t reach the shared database — usually spotty venue wifi. If it\'s red, check your connection before you keep scanning.'
+  },
+  matchedBadge: {
+    title: 'Lead badges',
+    text: '"No contact" means this lead has no email or phone yet — fill it in from here when you get a chance. "Matched" means the contact info came from the uploaded attendee list rather than the badge or a guess.'
+  },
+  exportCsv: {
+    title: 'Salesforce CSV export',
+    text: 'Exports every lead for the event you\'re currently on into a CSV formatted for Salesforce: name, company, title, email, phone, lead source, event, who scanned it and when, whether it matched the attendee list, reason for engagement, current software, contact source, and notes.'
+  },
+  attendeeCsv: {
+    title: 'Attendee list matching',
+    text: 'Upload any CSV — name, company, email, and phone columns get matched automatically no matter how they\'re labeled ("County" counts as a company). Anything else in the file becomes its own column here automatically, and you can add or remove columns by hand too.'
+  },
+  duplicate: {
+    title: 'Duplicate warning',
+    text: 'This shows up if someone on the team already scanned this same person for this event. It doesn\'t block your save — it\'s just a heads-up in case two reps talked to the same attendee, so you can edit the existing lead instead of creating a second one.'
+  },
+  webSearch: {
+    title: 'Web contact lookup',
+    text: 'If a badge and the attendee list both come up empty on contact info, this searches public .gov and county-directory pages only. Anything it finds gets flagged "verify" on the lead and in the export, since it wasn\'t confirmed with the attendee directly.'
+  },
+  currentSoftware: {
+    title: 'Current software',
+    text: 'Only fill this in if the attendee actually told you what they use today — it feeds sales/competitive reporting, so it\'s meant to be accurate, not guessed at from the agency type.'
+  }
+};
+function showHelp(key){
+  const t = HELP_TOPICS[key];
+  if(!t) return;
+  document.getElementById('helpTitle').textContent = t.title;
+  document.getElementById('helpText').textContent = t.text;
+  document.getElementById('helpOverlay').classList.add('show');
+}
+function hideHelp(){ document.getElementById('helpOverlay').classList.remove('show'); }
+function renderHelpTopics(){
+  const wrap = document.getElementById('helpTopicsWrap');
+  if(!wrap) return;
+  wrap.innerHTML = Object.keys(HELP_TOPICS).map(k => `
+    <button type="button" class="help-row" onclick="showHelp('${k}')">
+      <span>${HELP_TOPICS[k].title}</span><span class="help-row-arrow">›</span>
+    </button>`).join('');
+}
+renderHelpTopics(); // static content — doesn't depend on Firebase, so render right away
 
 function uid(){ return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -411,7 +503,7 @@ const State = {
   workerName: localStorage.getItem(LS_WORKER) || '',
   db: null,
   events: [],
-  activeEventId: null,
+  activeEventId: localStorage.getItem(LS_ACTIVE_EVENT) || null, // per-device: sticks until this rep changes it
   attendees: [],
   attendeeColumns: [{key:'firstName',label:'First Name'},{key:'lastName',label:'Last Name'},{key:'company',label:'Company'},{key:'email',label:'Email'},{key:'phone',label:'Phone'}],
   competitors: [],
@@ -714,20 +806,31 @@ function loadEventsAndMeta(){
     refreshAttendeeColumnsFromActiveEvent(); // event doc (and its column defs) may have just arrived/changed
   }, err => console.error('events snapshot error', err));
 
+  // meta/shared.activeEventId is only a *default* for a device that hasn't picked
+  // its own event yet — each phone now tracks its own active event locally (see
+  // LS_ACTIVE_EVENT) so reps at different conferences can each stay on their own
+  // event at once. Once a device has made its own choice, it ignores this default.
   if(State.unsubMeta) State.unsubMeta();
   State.unsubMeta = State.db.collection('meta').doc('shared').onSnapshot(doc => {
+    if(localStorage.getItem(LS_ACTIVE_EVENT) !== null) return; // this device already chose its own event
     const data = doc.exists ? doc.data() : {};
-    const newActive = data.activeEventId || null;
-    if(newActive !== State.activeEventId){
-      State.activeEventId = newActive;
+    const newDefault = data.activeEventId || null;
+    if(newDefault !== State.activeEventId){
+      State.activeEventId = newDefault;
       updateEventPill();
       subscribeToActiveEvent();
     }
   }, err => console.error('meta snapshot error', err));
 }
 async function setActiveEvent(id){
-  await State.db.collection('meta').doc('shared').set({activeEventId:id}, {merge:true});
-  // onSnapshot above will pick up the change and re-subscribe
+  // Sticks on this phone until this rep changes it again — does not affect any
+  // other device. Also nudges meta/shared so a brand-new device without a saved
+  // choice yet has a reasonable starting default.
+  localStorage.setItem(LS_ACTIVE_EVENT, id || '');
+  State.activeEventId = id;
+  updateEventPill();
+  subscribeToActiveEvent();
+  await State.db.collection('meta').doc('shared').set({activeEventId:id}, {merge:true}).catch(err=>console.error(err));
 }
 function updateEventPill(){
   const ev = State.events.find(e=>e.id===State.activeEventId);
@@ -1281,6 +1384,7 @@ function openReview(lead, existingKey){
       dupeDiv.style.background = '#E3F5F1'; dupeDiv.style.borderColor = '#BCE3DC'; dupeDiv.style.color = '#1d3a66';
       dupeDiv.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#4AA89A" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
         <div style="flex:1;">Already scanned by ${esc(d.scannedBy)||'someone'} (${fmtTime(d.savedAt)}) as "${esc(d.name)}".
+        <button type="button" class="help-q" onclick="showHelp('duplicate')" aria-label="About duplicate warnings" style="margin-left:4px;">?</button>
         <button class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="editLead('${dupe.key}')">Edit that lead instead</button></div>`;
       matchArea.appendChild(dupeDiv);
     }
@@ -1321,6 +1425,7 @@ function updateContactAlert(){
       <svg viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
       <div style="flex:1;">
         No email or phone on this lead yet — add it now if you have it, or come back and fill it in on edit later.
+        <button type="button" class="help-q" onclick="showHelp('webSearch')" aria-label="About the web lookup" style="margin-left:4px;">?</button>
         ${hasKey
           ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" id="btnWebSearchContact">Search the web for contact info</button></div><div id="webSearchStatus" class="hint" style="margin-top:4px;"></div>`
           : `<div class="hint" style="margin-top:6px;">Add an Anthropic API key under Setup to enable a web lookup here (already checked the attendee list — nothing there either).</div>`}
@@ -1440,6 +1545,10 @@ document.getElementById('btnSaveLead').onclick = async () => {
 function boot(){
   promptWorkerName(false);
   loadEventsAndMeta();
+  // If this device already has its own saved event, the meta/shared listener
+  // above will skip it (it only supplies a default for devices with no choice
+  // yet) — so subscribe directly here instead of waiting on that snapshot.
+  if(State.activeEventId){ updateEventPill(); subscribeToActiveEvent(); }
   subscribeCompetitors();
   subscribeEngagementReasons();
   switchTab('scan');

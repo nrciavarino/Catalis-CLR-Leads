@@ -458,7 +458,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.4.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.5.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -551,6 +551,18 @@ function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&
 function norm(s){ return (s||'').toLowerCase().normalize('NFKD').replace(/[^\w\s]/g,'').replace(/\s+/g,' ').trim(); }
 function toast(msg, ms){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'), ms||2200); }
 function fmtTime(ts){ if(!ts) return ''; const d=new Date(ts); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
+// One-tap contact: renders an email as a mailto: link, and a phone as both a
+// tel: (call) and sms: (text) link, so a rep can act on captured contact info
+// straight from wherever it's displayed instead of having to copy it out.
+function contactLinks(email, phone){
+  const bits = [];
+  if(email) bits.push(`<a href="mailto:${esc(email)}" style="color:var(--navy);text-decoration:underline;">✉ ${esc(email)}</a>`);
+  if(phone){
+    const dial = phone.replace(/[^0-9+]/g,'');
+    bits.push(`<a href="tel:${dial}" style="color:var(--navy);text-decoration:underline;">☎ ${esc(phone)}</a> <a href="sms:${dial}" aria-label="Text ${esc(phone)}" style="color:var(--navy);text-decoration:underline;">💬</a>`);
+  }
+  return bits.join('&nbsp;&nbsp;');
+}
 function setSyncState(state){
   document.getElementById('syncDot').className = state==='ok' ? '' : state;
   refreshEventPillA11y();
@@ -888,6 +900,7 @@ function loadEventsAndMeta(){
     if(newDefault !== State.activeEventId){
       State.activeEventId = newDefault;
       updateEventPill();
+      renderEventsList();
       subscribeToActiveEvent();
     }
   }, err => console.error('meta snapshot error', err));
@@ -899,6 +912,7 @@ async function setActiveEvent(id){
   localStorage.setItem(LS_ACTIVE_EVENT, id || '');
   State.activeEventId = id;
   updateEventPill();
+  renderEventsList(); // the "Active" badge / "Make active" button lives here too — must redraw it directly, since it's not driven by the same leads/attendees snapshot that subscribeToActiveEvent() below triggers
   subscribeToActiveEvent();
   await State.db.collection('meta').doc('shared').set({activeEventId:id}, {merge:true}).catch(err=>console.error(err));
 }
@@ -1245,7 +1259,7 @@ function renderLeadsList(){
         <div><div class="name">${esc(l.name)||'(no name)'}</div><div class="meta">${esc(l.company)||''}${l.title? ' · '+esc(l.title):''}</div></div>
         <div style="text-align:right;">${(!l.email && !l.phone) ? '<span class="badge badge-red">No contact</span>' : (l.matched ? '<span class="badge badge-teal">Matched</span>' : '')}</div>
       </div>
-      <div class="meta" style="margin-top:6px;">${l.email ? '✉ '+esc(l.email)+'&nbsp;&nbsp;' : ''}${l.phone ? '☎ '+esc(l.phone) : ''}</div>
+      <div class="meta" style="margin-top:6px;">${contactLinks(l.email, l.phone)}</div>
       <div class="meta">Scanned by ${esc(l.scannedBy)||'—'} · ${fmtTime(l.savedAt)}${l.reasonForEngagement ? ' · '+esc(l.reasonForEngagement) : ''}${l.currentSoftware ? ' · currently on '+esc(l.currentSoftware) : ''}${l.contactSource==='web-search' ? ' · <span style="color:var(--red);">contact found via web — verify</span>' : (l.webSearchAttempted ? ' · <span style="color:var(--ink-soft);">web search tried — no result</span>' : '')}</div>
       <div class="actions">
         <button class="btn btn-outline btn-sm" onclick="editLead('${l._key}')">Edit</button>
@@ -1285,7 +1299,7 @@ function pickPrizeWinner(){
       <h3 id="prizeWinnerHeading" style="text-align:center;"><span aria-hidden="true">🎉</span> And the winner is…</h3>
       <div style="text-align:center;margin:10px 0 4px;font-size:19px;font-weight:800;color:var(--navy);">${esc(winner.name)||'(no name)'}</div>
       <div class="hint" style="text-align:center;margin-bottom:10px;">${esc(winner.company)||''}${winner.title ? ' · '+esc(winner.title) : ''}</div>
-      <div class="hint" style="text-align:center;margin-bottom:16px;">${winner.email ? '✉ '+esc(winner.email) : ''}${winner.email && winner.phone ? '&nbsp;&nbsp;' : ''}${winner.phone ? '☎ '+esc(winner.phone) : ''}${(!winner.email && !winner.phone) ? 'No contact info captured for this lead' : ''}</div>
+      <div class="hint" style="text-align:center;margin-bottom:16px;">${(winner.email || winner.phone) ? contactLinks(winner.email, winner.phone) : 'No contact info captured for this lead'}</div>
       <button class="btn btn-outline btn-block" id="btnPickAgain" style="margin-bottom:8px;">Pick again</button>
       <button class="btn btn-primary btn-block" id="btnClosePrizeWinner">Done</button>
     </div>`;
@@ -1576,6 +1590,8 @@ function performWebContactSearch(){
     // nothing" apart from "that attempt never really ran."
     State.pendingLead.webSearchAttempted = true;
     if(!result || (!result.email && !result.phone)){
+      btn.disabled = false; // must clear this before updateContactAlert(), which
+                             // deliberately no-ops while the button is still disabled
       updateContactAlert(); // rebuilds with "already searched" wording + a "search again" button
       toast('No public contact info found with confidence — enter it manually.');
       return;
@@ -1588,6 +1604,7 @@ function performWebContactSearch(){
       updateContactAlert(); // will now render as "not missing" and clear this box
       toast('Found via web search (' + (result.sourceNote||'public source') + ') — verify before relying on it');
     } else {
+      btn.disabled = false;
       updateContactAlert();
       status.textContent = 'Found something, but those fields were already filled in.';
     }

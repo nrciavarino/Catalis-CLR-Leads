@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.4.0` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.5.0` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -28,7 +28,10 @@ matches what's in this repo before assuming a device is up to date)
 - **Team activity** — a live card on the Leads tab showing total leads, matched-attendee count,
   missing-contact count, and a per-rep leaderboard for the current event
 - **Prize-winner picker** — pulls one random lead from the current event and shows their name,
-  company, and captured contact info; tap again for a re-draw
+  company, and captured contact info as tap-to-act links (email/call/text); tap again for a
+  re-draw
+- **One-tap contact everywhere** — any email or phone number shown in the app (lead list, prize
+  winner) is a live link — tap to email, call, or text straight from where it's displayed
 - **Larger text option** — a Setup-tab toggle that bumps up text size on form fields, labels, and
   the lead list, without touching the tab bar, event pill, or badges (so nothing overflows)
 - **Missing-contact flagging** — visually flagged on the lead card and in the CSV export, both
@@ -176,6 +179,12 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.5.0**
+  - Fixed: web contact search no longer gets stuck on "Searching the web…" when it finds
+    nothing, and the "already searched" marker now actually shows up
+  - Fixed: the Events tab "Active" badge / "Make active" button now updates immediately when
+    you switch events (previously only the header pill updated)
+  - Added: one-tap contact links (email/call/text) on the prize-winner screen and the lead list
 - **v1.4.0**
   - Fixed: the rep's name now displays in "Signed in as" on repeat visits (previously it only
     painted on first-time setup, even though the name was already being used correctly under the

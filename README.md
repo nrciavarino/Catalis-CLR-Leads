@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.3.0` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.4.0` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -20,7 +20,17 @@ matches what's in this repo before assuming a device is up to date)
   automatically however they're labeled, and anything else in the file becomes its own column
 - **Web-search fallback** — if a lead is missing contact info and the attendee list doesn't have
   it either, one tap searches public `.gov`/county-directory listings for it (opt-in, not
-  automatic — it's a multi-second call and shouldn't slow down scanning)
+  automatic — it's a multi-second call and shouldn't slow down scanning). Once a search actually
+  completes — whether it finds something or comes up empty — that lead remembers it was already
+  tried, so reopening it shows "search again" instead of re-running a search that already ran. A
+  failed/errored attempt (bad key, no connection) doesn't count, so that case still shows as a
+  fresh, unsearched lead
+- **Team activity** — a live card on the Leads tab showing total leads, matched-attendee count,
+  missing-contact count, and a per-rep leaderboard for the current event
+- **Prize-winner picker** — pulls one random lead from the current event and shows their name,
+  company, and captured contact info; tap again for a re-draw
+- **Larger text option** — a Setup-tab toggle that bumps up text size on form fields, labels, and
+  the lead list, without touching the tab bar, event pill, or badges (so nothing overflows)
 - **Missing-contact flagging** — visually flagged on the lead card and in the CSV export, both
   at the moment of scanning and later when editing
 - **Duplicate-scan detection** — warns if someone else on the team already scanned this name
@@ -117,7 +127,7 @@ automatically.
 events/{eventId}                        { name, createdAt, attendeeColumns: [{key,label}, ...] }
 events/{eventId}/leads/{leadId}          { name, company, title, email, phone, notes,
                                             currentSoftware, reasonForEngagement, contactSource,
-                                            source, matched, scannedBy, savedAt }
+                                            source, matched, webSearchAttempted, scannedBy, savedAt }
 events/{eventId}/attendees/{attendeeId}  { firstName, lastName, company, email, phone, ...any
                                             custom columns from an uploaded CSV }
 meta/shared                              { activeEventId }
@@ -139,6 +149,11 @@ for name (a badge scan or photo read has no reliable way to split first/last).
 a web-found contact can be flagged for verification in the CSV export rather than treated as
 confirmed.
 
+`webSearchAttempted` is `true` once a web-contact search has actually completed for that lead —
+found something or confirmed nothing there — so the edit screen can offer "search again" instead
+of a fresh search. It's only set on a completed attempt, never on a failed one (bad key, no
+connection), so an errored attempt still shows as unsearched.
+
 ## Versioning
 
 `APP_VERSION` is a plain string constant near the top of the `<script>` block in `index.html`,
@@ -158,6 +173,23 @@ manually replace `index.html` on the host.
   the Events tab.
 - The one-tap setup link embeds both secrets in the URL itself. Share it privately; don't post it
   anywhere that gets logged or archived outside your control.
+
+## Changelog
+
+- **v1.4.0**
+  - Fixed: the rep's name now displays in "Signed in as" on repeat visits (previously it only
+    painted on first-time setup, even though the name was already being used correctly under the
+    hood for lead attribution)
+  - Added: web-search-attempted tracking on leads (see Data model above)
+  - Added: Team activity card on the Leads tab (totals + per-rep leaderboard)
+  - Added: prize-winner picker on the Leads tab
+  - Added: larger-text display option in Setup
+- **v1.3.0**
+  - Added: per-device active event switching — each phone now stays on whichever event it picks
+    until that rep changes it, instead of one global active event shared by the whole team
+  - Added: in-app Help — a dedicated Help section in Setup, plus inline "?" tips on ~9 controls
+- **v1.0.2** — last version tracked before this changelog started; see the rest of this README
+  for the feature set as of that release
 
 ## Known limitations
 

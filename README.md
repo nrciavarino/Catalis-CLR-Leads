@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.5.0` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.6.0` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -32,6 +32,14 @@ matches what's in this repo before assuming a device is up to date)
   re-draw
 - **One-tap contact everywhere** — any email or phone number shown in the app (lead list, prize
   winner) is a live link — tap to email, call, or text straight from where it's displayed
+- **Attendee table, sized for a phone** — First/Last Name freeze in place on the left and the
+  row-action buttons freeze on the right, so only the middle columns (Company, Email, Phone,
+  and anything custom) scroll — the name stays visible the whole time
+- **Add an attendee straight to leads** — a quick action on each attendee row opens the same
+  review/edit screen a badge scan would, prefilled with that attendee's info
+- **Event analytics screen** — a deeper, current-event-only view with a bar-chart breakdown of
+  Reason for Engagement and Current Software, plus totals and a leads-by-rep breakdown, reached
+  from a button on the Leads tab
 - **Larger text option** — a Setup-tab toggle that bumps up text size on form fields, labels, and
   the lead list, without touching the tab bar, event pill, or badges (so nothing overflows)
 - **Missing-contact flagging** — visually flagged on the lead card and in the CSV export, both
@@ -179,6 +187,13 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.6.0**
+  - Fixed: attendee table sizing on phone — Name now freezes on the left and row actions freeze
+    on the right, so only the middle columns scroll
+  - Added: quick "add to leads" action on each attendee row, prefilling the same review screen
+    a badge scan would use
+  - Added: a dedicated event analytics screen (current event only) with bar-chart breakdowns of
+    Reason for Engagement and Current Software, plus totals and leads-by-rep
 - **v1.5.0**
   - Fixed: web contact search no longer gets stuck on "Searching the web…" when it finds
     nothing, and the "already searched" marker now actually shows up

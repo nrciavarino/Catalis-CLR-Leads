@@ -163,6 +163,25 @@
   table.at-table input{border:1px solid transparent;padding:5px 6px;font-size:13px;border-radius:6px;background:transparent;width:100%;}
   table.at-table input:focus{border-color:var(--border);background:#fff;}
   table.at-table tr:hover td{background:#FAF9F5;}
+  /* Freeze First/Last Name (always columns 1-2 — CANONICAL_COLS guarantees the
+     order) so they stay put while the rest of the row scrolls sideways. Fixed
+     widths are required for sticky offsets to stack correctly; kept narrow so
+     the frozen strip doesn't eat too much of a 320px screen. */
+  table.at-table th:nth-child(1), table.at-table td:nth-child(1),
+  table.at-table th:nth-child(2), table.at-table td:nth-child(2){
+    position:sticky; background:var(--surface); width:72px; min-width:72px; max-width:72px;
+  }
+  table.at-table th:nth-child(1), table.at-table td:nth-child(1){ left:0; z-index:2; }
+  table.at-table th:nth-child(2), table.at-table td:nth-child(2){ left:72px; z-index:2; box-shadow:2px 0 4px -2px rgba(0,0,0,.15); }
+  table.at-table th:nth-child(1), table.at-table th:nth-child(2){ z-index:3; }
+  table.at-table tr:hover td:nth-child(1), table.at-table tr:hover td:nth-child(2){ background:#FAF9F5; }
+  /* Row actions (add-to-leads / remove) are the last column — freeze it on
+     the right too, so it's reachable without swiping across every column. */
+  table.at-table th:last-child, table.at-table td:last-child{
+    position:sticky; right:0; background:var(--surface); z-index:2; box-shadow:-2px 0 4px -2px rgba(0,0,0,.15);
+  }
+  table.at-table th:last-child{ z-index:3; }
+  table.at-table tr:hover td:last-child{ background:#FAF9F5; }
 
   .modal-backdrop{position:fixed;inset:0;background:rgba(22,35,63,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
   .modal-box{background:#fff;border-radius:18px;padding:22px;max-width:340px;width:100%;box-shadow:var(--shadow-lg);text-align:center;}
@@ -279,12 +298,29 @@
       What's in this file?
     </div>
     <h2 class="section-title">Team activity<button type="button" class="help-q" onclick="showHelp('teamAnalytics')" aria-label="What is this?">?</button></h2>
-    <div class="card" id="teamAnalyticsWrap" style="margin-bottom:14px;"></div>
+    <div class="card" id="teamAnalyticsWrap" style="margin-bottom:8px;"></div>
+    <button class="btn btn-outline btn-block" id="btnOpenAnalytics" style="margin-bottom:14px;"><span aria-hidden="true">📊</span> View full analytics</button>
     <div class="row" style="margin-bottom:14px;align-items:center;">
       <button class="btn btn-outline grow" id="btnPickWinner"><span aria-hidden="true">🎉</span> Pick a prize winner</button>
       <button type="button" class="help-q" onclick="showHelp('prizeWinner')" aria-label="How does this work?">?</button>
     </div>
     <div id="leadsListWrap"></div>
+  </div>
+
+  <div class="view" id="view-analytics">
+    <div class="row between" style="margin-bottom:6px;">
+      <button class="btn-icon btn-outline" onclick="switchTab('leads')" aria-label="Back"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 19l-7-7 7-7"/></svg></button>
+      <div style="font-weight:700;font-size:15px;">Event analytics<button type="button" class="help-q" onclick="showHelp('fullAnalytics')" aria-label="What is this?" style="margin-left:4px;">?</button></div>
+      <div style="width:44px;"></div>
+    </div>
+    <div class="hint" style="margin-bottom:12px;">Current event only — for the event switched on this phone right now.</div>
+    <div class="card" id="analyticsSummaryWrap" style="margin-bottom:16px;"></div>
+    <h2 class="section-title">Reason for engagement</h2>
+    <div class="card" id="analyticsReasonWrap" style="margin-bottom:16px;"></div>
+    <h2 class="section-title">Current software</h2>
+    <div class="card" id="analyticsSoftwareWrap" style="margin-bottom:16px;"></div>
+    <h2 class="section-title">Leads by rep</h2>
+    <div class="card" id="analyticsRepWrap"></div>
   </div>
 
   <div class="view" id="view-attendees">
@@ -299,7 +335,7 @@
       </div>
     </div>
     <div class="card" style="overflow-x:auto;">
-      <div class="hint" style="margin-bottom:6px;">← swipe sideways to see more columns →</div>
+      <div class="hint" style="margin-bottom:6px;">Name stays put — swipe sideways for the rest →</div>
       <table class="at-table" id="attendeeTable">
         <thead><tr id="attendeeTheadRow"></tr></thead>
         <tbody id="attendeeTbody"></tbody>
@@ -458,7 +494,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.5.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.6.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -513,6 +549,10 @@ const HELP_TOPICS = {
   prizeWinner: {
     title: 'Prize winner picker',
     text: 'Picks one random lead from everyone\'s leads for this event and shows their name, company, and the contact info captured for them. Tap it again for a re-draw. It doesn\'t remove or mark the lead in any way — you can pick as many times as you want.'
+  },
+  fullAnalytics: {
+    title: 'Event analytics',
+    text: 'A deeper breakdown for the event you\'re currently on: totals, a bar chart of Reason for Engagement, a bar chart of Current Software, and leads by rep. It\'s scoped to this one event only — it doesn\'t combine numbers across past events.'
   }
 };
 function showHelp(key){
@@ -1079,8 +1119,28 @@ function renderAttendeeTable(){
       const type = c.key==='email' ? 'email' : c.key==='phone' ? 'tel' : 'text';
       return `<td><input type="${type}" value="${esc(a[c.key])}" onchange="updateAttendeeField('${a.id}','${c.key}',this.value)"></td>`;
     }).join('');
-    return `<tr>${cells}<td><button class="btn-icon btn-outline" style="width:32px;height:32px;" onclick="removeAttendeeRow('${a.id}')" aria-label="Remove">✕</button></td></tr>`;
+    return `<tr>${cells}<td style="white-space:nowrap;">
+      <button class="btn-icon btn-outline" style="width:32px;height:32px;color:var(--teal);border-color:var(--teal);" onclick="addAttendeeToLeads('${a.id}')" aria-label="Add ${esc(attendeeFullName(a))||'this attendee'} to leads" title="Add to leads">
+        <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="8" r="4"/><path d="M2 20c0-4 3-6 7-6"/><path d="M17 8v6M14 11h6"/></svg>
+      </button>
+      <button class="btn-icon btn-outline" style="width:32px;height:32px;" onclick="removeAttendeeRow('${a.id}')" aria-label="Remove">✕</button>
+    </td></tr>`;
   }).join('');
+}
+function addAttendeeToLeads(id){
+  const a = State.attendees.find(x=>x.id===id);
+  if(!a) return;
+  openReview({
+    name: attendeeFullName(a),
+    company: a.company || '',
+    title: '',
+    email: a.email || '',
+    phone: a.phone || '',
+    notes: '',
+    source: 'attendee',
+    matched: true,
+    contactSource: (a.email || a.phone) ? 'attendee-list' : ''
+  });
 }
 function updateAttendeeField(id, field, val){
   const a = State.attendees.find(x=>x.id===id);
@@ -1288,6 +1348,58 @@ function renderTeamAnalytics(){
         <span style="flex:1;">${i===0?'🥇 ':''}${esc(rep)}</span><span style="font-weight:700;color:var(--ink);">${count}</span>
       </div>`).join('')}`;
 }
+/* ---------- Dedicated analytics screen (current event only) ---------- */
+function openAnalyticsScreen(){
+  renderAnalyticsScreen();
+  switchViewOnly('analytics');
+}
+function renderAnalyticsScreen(){
+  const leads = allLeadsSorted();
+  const total = leads.length;
+  const matched = leads.filter(l => l.matched).length;
+  const missing = leads.filter(l => !l.email && !l.phone).length;
+  document.getElementById('analyticsSummaryWrap').innerHTML = total ? `
+    <div class="row wrap" style="gap:20px;">
+      <div><div style="font-size:22px;font-weight:800;color:var(--navy);">${total}</div><div class="hint">total leads</div></div>
+      <div><div style="font-size:22px;font-weight:800;color:var(--navy);">${Math.round(matched/total*100)}%</div><div class="hint">matched attendee list</div></div>
+      <div><div style="font-size:22px;font-weight:800;color:var(--navy);">${Math.round(missing/total*100)}%</div><div class="hint">missing contact</div></div>
+    </div>` : `<p class="hint" style="margin:0;">No leads yet for this event.</p>`;
+
+  renderBarBreakdown('analyticsReasonWrap', leads, 'reasonForEngagement', 'var(--teal)', 'Not specified');
+  renderBarBreakdown('analyticsSoftwareWrap', leads, 'currentSoftware', 'var(--navy)', 'Not asked / not mentioned');
+
+  const byRep = {};
+  leads.forEach(l => { const rep = l.scannedBy || 'Unknown'; byRep[rep] = (byRep[rep]||0) + 1; });
+  const repData = Object.entries(byRep).map(([label,count]) => ({label,count})).sort((a,b) => b.count-a.count);
+  renderBarsFromData('analyticsRepWrap', repData, 'var(--brass-dark)');
+}
+function renderBarBreakdown(containerId, leads, field, color, emptyLabel){
+  const counts = {};
+  leads.forEach(l => { const v = l[field] || emptyLabel; counts[v] = (counts[v]||0) + 1; });
+  const data = Object.entries(counts).map(([label,count]) => ({label,count})).sort((a,b) => b.count-a.count);
+  renderBarsFromData(containerId, data, color);
+}
+// Pure CSS bars — no charting library, consistent with this app's no-build,
+// no-framework approach. Bar width is proportional to the largest count in
+// the set; the percentage shown alongside each count is share-of-total.
+function renderBarsFromData(containerId, data, color){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  if(!data.length){ el.innerHTML = `<p class="hint" style="margin:0;">No data yet.</p>`; return; }
+  const max = Math.max(...data.map(d => d.count));
+  const total = data.reduce((s,d) => s+d.count, 0);
+  el.innerHTML = data.map(d => `
+    <div style="margin-bottom:12px;">
+      <div class="row between" style="margin-bottom:4px;font-size:12.5px;">
+        <span>${esc(d.label)}</span>
+        <span style="font-weight:700;color:var(--ink);">${d.count} <span class="hint" style="font-weight:400;">(${Math.round(d.count/total*100)}%)</span></span>
+      </div>
+      <div style="background:var(--border);border-radius:6px;height:10px;overflow:hidden;">
+        <div style="background:${color};height:100%;width:${Math.round(d.count/max*100)}%;border-radius:6px;"></div>
+      </div>
+    </div>`).join('');
+}
+document.getElementById('btnOpenAnalytics').onclick = openAnalyticsScreen;
 function pickPrizeWinner(){
   const leads = allLeadsSorted();
   if(!leads.length){ toast('No leads to pick from yet'); return; }
@@ -1495,11 +1607,14 @@ function openReview(lead, existingKey){
   document.getElementById('f_software').value = State.pendingLead.currentSoftware || '';
   renderEngagementReasonSelectOptions();
   document.getElementById('f_reason').value = State.pendingLead.reasonForEngagement || '';
-  document.getElementById('f_source').textContent = 'Source: ' + ({qr:'QR / barcode scan', photo:'photo (AI-read)', manual:'manual entry'}[State.pendingLead.source] || 'manual entry');
+  document.getElementById('f_source').textContent = 'Source: ' + ({qr:'QR / barcode scan', photo:'photo (AI-read)', manual:'manual entry', attendee:'attendee list'}[State.pendingLead.source] || 'manual entry');
 
   const matchArea = document.getElementById('matchArea');
   matchArea.innerHTML = '';
-  const match = findAttendeeMatch(State.pendingLead.name, State.pendingLead.company);
+  // Skip the match-lookup entirely when this lead was just added FROM the
+  // attendee list — it would immediately re-match against the very record it
+  // came from and show a redundant "Use this" chip for data already applied.
+  const match = State.pendingLead.source === 'attendee' ? null : findAttendeeMatch(State.pendingLead.name, State.pendingLead.company);
   if(match){
     const a = match.attendee;
     matchArea.innerHTML = `

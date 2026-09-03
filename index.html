@@ -64,11 +64,7 @@
   h2.section-title{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-soft);margin:18px 0 8px;font-weight:700;display:flex;align-items:center;gap:6px;}
   h2.section-title:first-child{margin-top:2px;}
 
-  /* ---- Help: inline "?" tips + dedicated Help section (Setup tab) ---- */
-  .help-q{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;
-    background:rgba(20,40,68,.08);color:var(--ink-soft);font-size:11px;font-weight:700;border:none;cursor:pointer;
-    flex:0 0 auto;padding:0;line-height:1;-webkit-tap-highlight-color:transparent;}
-  .help-q:active{background:rgba(20,40,68,.16);}
+  /* ---- Help: single entry point (Setup tab → Help section) ---- */
   #helpOverlay{position:fixed;inset:0;background:rgba(20,40,68,.4);z-index:400;display:none;align-items:flex-end;justify-content:center;}
   #helpOverlay.show{display:flex;}
   #helpCard{background:var(--surface);border-radius:16px 16px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom));
@@ -182,6 +178,21 @@
   }
   table.at-table th:last-child{ z-index:3; }
   table.at-table tr:hover td:last-child{ background:#FAF9F5; }
+  table.at-table th.sortable{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
+  table.at-table th.sortable:active{color:var(--navy);}
+  table.at-table th .sort-arrow{display:inline-block;margin-left:3px;font-size:9px;opacity:.75;}
+  @media (min-width:700px){
+    /* Tablet/desktop has room to show every column without swiping, so the
+       72px sticky Name strip below (needed on a narrow phone) just cramps
+       and truncates names here instead of helping — drop the freeze and let
+       Name size like any other column. */
+    table.at-table th:nth-child(1), table.at-table td:nth-child(1),
+    table.at-table th:nth-child(2), table.at-table td:nth-child(2){
+      position:static; width:auto; min-width:130px; max-width:none; box-shadow:none;
+    }
+    table.at-table th:nth-child(1), table.at-table th:nth-child(2){ z-index:auto; }
+    #attendeeSwipeHint{ display:none; }
+  }
 
   .modal-backdrop{position:fixed;inset:0;background:rgba(22,35,63,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
   .modal-box{background:#fff;border-radius:18px;padding:22px;max-width:340px;width:100%;box-shadow:var(--shadow-lg);text-align:center;}
@@ -243,12 +254,10 @@
     <div class="row wrap" style="margin-top:14px;align-items:center;">
       <button class="btn btn-outline grow" id="btnToggleCam">Stop camera</button>
       <button class="btn btn-dark grow" id="btnTakePhoto">No QR — take photo</button>
-      <button type="button" class="help-q" onclick="showHelp('photoOcr')" aria-label="How does photo reading work?">?</button>
     </div>
     <input type="file" id="photoInput" accept="image/*" capture="environment">
     <div class="hint" style="margin-top:10px;text-align:center;" id="syncHint">
       Live sync assumes solid venue wifi. Leads save instantly and sync to the whole team within a second or two.
-      <button type="button" class="help-q" onclick="showHelp('syncDot')" aria-label="What does the sync dot mean?">?</button>
     </div>
     <div id="manualAddWrap" style="margin-top:14px;">
       <button class="btn btn-outline btn-block" onclick="openReview(null)">+ Enter a lead manually</button>
@@ -274,7 +283,7 @@
       <div class="field"><label class="field-label" for="f_reason">Reason for engagement</label>
         <select id="f_reason"><option value="">— not specified —</option></select>
       </div>
-      <div class="field"><label class="field-label" for="f_software">Current software (ask, don't guess)<button type="button" class="help-q" onclick="showHelp('currentSoftware')" aria-label="Why does this matter?" style="margin-left:4px;">?</button></label>
+      <div class="field"><label class="field-label" for="f_software">Current software (ask, don't guess)</label>
         <select id="f_software"><option value="">— not asked / not mentioned —</option></select>
       </div>
       <div class="field"><label class="field-label" for="f_notes">Notes</label><textarea id="f_notes" placeholder="Interested in Benchmark integration…"></textarea></div>
@@ -285,24 +294,19 @@
   </div>
 
   <div class="view" id="view-leads">
-    <h2 class="section-title">Leads for this event<button type="button" class="help-q" onclick="showHelp('matchedBadge')" aria-label="What do the badges mean?">?</button></h2>
+    <h2 class="section-title">Leads for this event</h2>
     <div class="card" style="padding:10px 12px;"><input type="text" id="leadSearch" placeholder="Search leads by name or company…" aria-label="Search leads by name or company"></div>
     <div class="row wrap" style="margin:8px 0 14px;">
       <span class="badge badge-brass" id="leadCountBadge">0 leads</span>
       <span class="badge badge-red" id="leadMissingBadge" style="display:none;">0 missing contact</span>
       <span class="hint" id="lastSyncedLabel" style="margin-left:auto;"></span>
     </div>
-    <button class="btn btn-teal btn-block" id="btnExportCsv" style="margin-bottom:6px;">Export Salesforce CSV</button>
-    <div class="hint" style="text-align:center;margin-bottom:14px;">
-      <button type="button" class="help-q" onclick="showHelp('exportCsv')" aria-label="What's in the export?">?</button>
-      What's in this file?
-    </div>
-    <h2 class="section-title">Team activity<button type="button" class="help-q" onclick="showHelp('teamAnalytics')" aria-label="What is this?">?</button></h2>
+    <button class="btn btn-teal btn-block" id="btnExportCsv" style="margin-bottom:14px;">Export Salesforce CSV</button>
+    <h2 class="section-title">Team activity</h2>
     <div class="card" id="teamAnalyticsWrap" style="margin-bottom:8px;"></div>
     <button class="btn btn-outline btn-block" id="btnOpenAnalytics" style="margin-bottom:14px;"><span aria-hidden="true">📊</span> View full analytics</button>
     <div class="row" style="margin-bottom:14px;align-items:center;">
       <button class="btn btn-outline grow" id="btnPickWinner"><span aria-hidden="true">🎉</span> Pick a prize winner</button>
-      <button type="button" class="help-q" onclick="showHelp('prizeWinner')" aria-label="How does this work?">?</button>
     </div>
     <div id="leadsListWrap"></div>
   </div>
@@ -310,7 +314,7 @@
   <div class="view" id="view-analytics">
     <div class="row between" style="margin-bottom:6px;">
       <button class="btn-icon btn-outline" onclick="switchTab('leads')" aria-label="Back"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 19l-7-7 7-7"/></svg></button>
-      <div style="font-weight:700;font-size:15px;">Event analytics<button type="button" class="help-q" onclick="showHelp('fullAnalytics')" aria-label="What is this?" style="margin-left:4px;">?</button></div>
+      <div style="font-weight:700;font-size:15px;">Event analytics</div>
       <div style="width:44px;"></div>
     </div>
     <div class="hint" style="margin-bottom:12px;">Current event only — for the event switched on this phone right now.</div>
@@ -324,7 +328,7 @@
   </div>
 
   <div class="view" id="view-attendees">
-    <h2 class="section-title">Attendee list<button type="button" class="help-q" onclick="showHelp('attendeeCsv')" aria-label="How does column matching work?">?</button></h2>
+    <h2 class="section-title">Attendee list</h2>
     <div class="card">
       <p style="margin:0 0 10px;font-size:13px;color:var(--ink-soft);">Upload the conference attendee list (any CSV). Name, company, email, and phone columns get matched automatically however they're labeled; anything else in the file becomes its own column here.</p>
       <input type="file" id="attendeeCsvInput" accept=".csv,text/csv" style="margin-bottom:8px;" aria-label="Upload attendee list CSV">
@@ -335,7 +339,8 @@
       </div>
     </div>
     <div class="card" style="overflow-x:auto;">
-      <div class="hint" style="margin-bottom:6px;">Name stays put — swipe sideways for the rest →</div>
+      <div class="hint" id="attendeeSwipeHint" style="margin-bottom:6px;">Name stays put — swipe sideways for the rest →</div>
+      <div class="hint" style="margin-bottom:6px;">Tap a column header to sort</div>
       <table class="at-table" id="attendeeTable">
         <thead><tr id="attendeeTheadRow"></tr></thead>
         <tbody id="attendeeTbody"></tbody>
@@ -346,7 +351,7 @@
   </div>
 
   <div class="view" id="view-events">
-    <h2 class="section-title">Events<button type="button" class="help-q" onclick="showHelp('event')" aria-label="What does Active mean?">?</button></h2>
+    <h2 class="section-title">Events</h2>
     <div id="eventsListWrap"></div>
     <div class="card">
       <div class="field"><label class="field-label" for="newEventName">New event name</label><input type="text" id="newEventName" placeholder="APPA 2026 Annual Conference"></div>
@@ -494,7 +499,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.6.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.7.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -503,6 +508,7 @@ const LS_APIKEY   = 'compassleads.apiKey';
 const LS_WORKER   = 'compassleads.workerName';
 const LS_ACTIVE_EVENT = 'compassleads.activeEventId'; // per-device: which event THIS phone is on
 const LS_TEXT_LG = 'compassleads.textLg'; // per-device: larger-text display preference
+const LS_ATTENDEE_SORT = 'compassleads.attendeeSort'; // per-device: remembered attendee-table sort column + direction
 
 /* ---------- Help (Medium tier: dedicated Help section + inline "?" tips) ---------- */
 const HELP_TOPICS = {
@@ -614,6 +620,7 @@ const State = {
   events: [],
   activeEventId: localStorage.getItem(LS_ACTIVE_EVENT) || null, // per-device: sticks until this rep changes it
   attendees: [],
+  attendeeSort: JSON.parse(localStorage.getItem(LS_ATTENDEE_SORT) || 'null') || {key:null, dir:'asc'}, // per-device: remembered attendee-table sort
   attendeeColumns: [{key:'firstName',label:'First Name'},{key:'lastName',label:'Last Name'},{key:'company',label:'Company'},{key:'email',label:'Email'},{key:'phone',label:'Phone'}],
   competitors: [],
   engagementReasons: [],
@@ -1104,17 +1111,40 @@ function removeCustomColumn(key){
   renderAttendeeTable();
   persistAttendeeColumns();
 }
+function sortAttendees(key){
+  const s = State.attendeeSort;
+  s.dir = (s.key === key && s.dir === 'asc') ? 'desc' : 'asc';
+  s.key = key;
+  localStorage.setItem(LS_ATTENDEE_SORT, JSON.stringify(s));
+  renderAttendeeTable();
+}
+function sortedAttendees(){
+  const {key, dir} = State.attendeeSort;
+  if(!key) return State.attendees;
+  const list = State.attendees.slice();
+  list.sort((a, b) => {
+    const av = String(a[key] || '').toLowerCase(), bv = String(b[key] || '').toLowerCase();
+    if(av < bv) return dir === 'asc' ? -1 : 1;
+    if(av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  return list;
+}
 function renderAttendeeTable(){
   const theadRow = document.getElementById('attendeeTheadRow');
   const tbody = document.getElementById('attendeeTbody');
   const empty = document.getElementById('attendeeEmpty');
   const canonicalKeys = new Set(CANONICAL_COLS.map(c=>c.key));
-  theadRow.innerHTML = State.attendeeColumns.map(c =>
-    `<th scope="col">${esc(c.label)}${canonicalKeys.has(c.key) ? '' : ` <button type="button" onclick="removeCustomColumn('${c.key}')" aria-label="Remove ${esc(c.label)} column" title="Remove column" style="background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:11px;">✕</button>`}</th>`
-  ).join('') + `<th scope="col"><span class="sr-only">Row actions</span></th>`;
+  const sort = State.attendeeSort;
+  theadRow.innerHTML = State.attendeeColumns.map(c => {
+    const active = sort.key === c.key;
+    const arrow = active ? `<span class="sort-arrow" aria-hidden="true">${sort.dir === 'asc' ? '▲' : '▼'}</span>` : '';
+    const removeBtn = canonicalKeys.has(c.key) ? '' : ` <button type="button" onclick="event.stopPropagation();removeCustomColumn('${c.key}')" aria-label="Remove ${esc(c.label)} column" title="Remove column" style="background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:11px;">✕</button>`;
+    return `<th scope="col" class="sortable" onclick="sortAttendees('${c.key}')" aria-sort="${active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}" title="Sort by ${esc(c.label)}">${esc(c.label)}${arrow}${removeBtn}</th>`;
+  }).join('') + `<th scope="col"><span class="sr-only">Row actions</span></th>`;
   if(!State.attendees.length){ tbody.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display = 'none';
-  tbody.innerHTML = State.attendees.map((a) => {
+  tbody.innerHTML = sortedAttendees().map((a) => {
     const cells = State.attendeeColumns.map(c => {
       const type = c.key==='email' ? 'email' : c.key==='phone' ? 'tel' : 'text';
       return `<td><input type="${type}" value="${esc(a[c.key])}" onchange="updateAttendeeField('${a.id}','${c.key}',this.value)"></td>`;
@@ -1635,7 +1665,6 @@ function openReview(lead, existingKey){
       dupeDiv.style.background = '#E3F5F1'; dupeDiv.style.borderColor = '#BCE3DC'; dupeDiv.style.color = '#1d3a66';
       dupeDiv.innerHTML = `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="#4AA89A" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
         <div style="flex:1;">Already scanned by ${esc(d.scannedBy)||'someone'} (${fmtTime(d.savedAt)}) as "${esc(d.name)}".
-        <button type="button" class="help-q" onclick="showHelp('duplicate')" aria-label="About duplicate warnings" style="margin-left:4px;">?</button>
         <button class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="editLead('${dupe.key}')">Edit that lead instead</button></div>`;
       matchArea.appendChild(dupeDiv);
     }
@@ -1677,7 +1706,6 @@ function updateContactAlert(){
       <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
       <div style="flex:1;">
         No email or phone on this lead yet — add it now if you have it, or come back and fill it in on edit later.
-        <button type="button" class="help-q" onclick="showHelp('webSearch')" aria-label="About the web lookup" style="margin-left:4px;">?</button>
         ${hasKey
           ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" id="btnWebSearchContact">${alreadySearched ? 'Search the web again' : 'Search the web for contact info'}</button></div><div id="webSearchStatus" class="hint" style="margin-top:4px;">${alreadySearched ? 'Already searched once for this lead — nothing turned up.' : ''}</div>`
           : `<div class="hint" style="margin-top:6px;">Add an Anthropic API key under Setup to enable a web lookup here (already checked the attendee list — nothing there either).</div>`}

@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.8.0` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.9.0` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -48,8 +48,10 @@ matches what's in this repo before assuming a device is up to date)
 - **Event analytics screen** — a deeper, current-event-only view with a bar-chart breakdown of
   Reason for Engagement and Current Software, plus totals and a leads-by-rep breakdown, reached
   from a button on the Leads tab
-- **Larger text option** — a Setup-tab toggle that bumps up text size on form fields, labels, and
-  the lead list, without touching the tab bar, event pill, or badges (so nothing overflows)
+- **Larger text option** — a Setup-tab slider (100%–160%) that scales text size on form fields,
+  labels, and the lead list, without touching the tab bar, event pill, or badges (so nothing
+  overflows). Defaults to 120% for easier reading at a booth; each device remembers its own
+  chosen size
 - **Missing-contact flagging** — visually flagged on the lead card and in the CSV export, both
   at the moment of scanning and later when editing
 - **Duplicate-scan detection** — warns if someone else on the team already scanned this name
@@ -195,6 +197,12 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.9.0**
+  - Changed: text size in Setup is now a slider (100%–160%) instead of an on/off checkbox, so
+    reps can pick their own comfortable size rather than one fixed "larger" preset
+  - Changed: text size now defaults to 120% (larger) on a fresh device instead of defaulting off;
+    a device that already had the old checkbox turned off keeps its normal size instead of
+    jumping up
 - **v1.8.0**
   - Added: resizable attendee-table columns — drag a column header's edge to widen/narrow it,
     remembered per column on that device

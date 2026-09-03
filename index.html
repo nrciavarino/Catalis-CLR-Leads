@@ -26,6 +26,7 @@
     --radius:14px; --radius-sm:9px;
     --shadow:0 2px 10px rgba(20,40,68,0.09); --shadow-lg:0 8px 28px rgba(20,40,68,0.18);
     --tab-h:64px; --topbar-h:56px;
+    --text-scale:1.2; /* overridden immediately by initTextScaleSlider() from the saved/default preference */
   }
   .compass-arm{transform-origin:60px 46px;animation:compass-wave 2s ease-in-out infinite}
   .compass-figure{animation:compass-bob 2.8s ease-in-out infinite}
@@ -80,7 +81,7 @@
 
   .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;margin-bottom:12px;}
 
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:none;border-radius:11px;padding:12px 16px;font-size:15px;font-weight:600;cursor:pointer;transition:transform .06s ease, filter .15s ease;-webkit-tap-highlight-color:transparent;}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:none;border-radius:11px;padding:12px 16px;font-size:calc(15px * var(--text-scale));font-weight:600;cursor:pointer;transition:transform .06s ease, filter .15s ease;-webkit-tap-highlight-color:transparent;}
   .btn:active{transform:scale(.97);}
   .btn-primary{background:var(--brass);color:var(--brass-dark);}
   .btn-primary:hover{filter:brightness(1.05);}
@@ -96,27 +97,21 @@
   .row{display:flex;gap:10px;} .row.wrap{flex-wrap:wrap;} .row.between{justify-content:space-between;align-items:center;}
   .grow{flex:1 1 auto;min-width:0;}
 
-  label.field-label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-soft);margin:0 0 5px;text-transform:uppercase;letter-spacing:.3px;}
+  label.field-label{display:block;font-size:calc(12.5px * var(--text-scale));font-weight:700;color:var(--ink-soft);margin:0 0 5px;text-transform:uppercase;letter-spacing:.3px;}
   input[type=text],input[type=email],input[type=tel],input[type=password],input[type=date],textarea,select{
-    width:100%;border:1.5px solid var(--border);border-radius:10px;padding:11px 12px;font-size:15.5px;background:#fff;color:var(--ink);
+    width:100%;border:1.5px solid var(--border);border-radius:10px;padding:11px 12px;font-size:calc(15.5px * var(--text-scale));background:#fff;color:var(--ink);
   }
   textarea{resize:vertical;min-height:80px;font-family:inherit;}
   .field{margin-bottom:12px;} .field.missing input{border-color:var(--red);background:var(--red-pale);}
-  .hint{font-size:12px;color:var(--ink-soft);margin-top:4px;}
+  .hint{font-size:calc(12px * var(--text-scale));color:var(--ink-soft);margin-top:4px;}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;}
 
-  /* ---- Larger-text option: deliberately scoped to running text, form fields,
-     and lead-list content only — never the tab bar, event pill, or badges,
-     since those have fixed widths/heights that would visibly break. ---- */
-  body.text-lg label.field-label{font-size:14px;}
-  body.text-lg input[type=text],body.text-lg input[type=email],body.text-lg input[type=tel],
-  body.text-lg input[type=password],body.text-lg input[type=date],body.text-lg textarea,body.text-lg select{
-    font-size:18px;
-  }
-  body.text-lg .lead-item .name{font-size:17px;}
-  body.text-lg .lead-item .meta{font-size:14px;}
-  body.text-lg .card p, body.text-lg .hint{font-size:13.5px;}
-  body.text-lg .btn{font-size:16.5px;}
+  /* ---- Text size preference: --text-scale (set via the slider in
+     Setup → Display) multiplies the base size of running text, form
+     fields, and lead-list content only — never the tab bar, event pill,
+     or badges, since those have fixed widths/heights that would visibly
+     break. Defaults larger (see initTextScaleSlider) rather than 1x. ---- */
+  #textScaleSlider{width:100%;accent-color:var(--teal);}
 
   .badge{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;}
   .badge-teal{background:var(--teal-pale);color:var(--teal);} .badge-red{background:var(--red-pale);color:var(--red);}
@@ -145,8 +140,8 @@
 
   .lead-item{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;}
   .lead-item .top{display:flex;justify-content:space-between;gap:8px;}
-  .lead-item .name{font-weight:700;font-size:15px;}
-  .lead-item .meta{font-size:12.5px;color:var(--ink-soft);margin-top:2px;}
+  .lead-item .name{font-weight:700;font-size:calc(15px * var(--text-scale));}
+  .lead-item .meta{font-size:calc(12.5px * var(--text-scale));color:var(--ink-soft);margin-top:2px;}
   .lead-item .actions{display:flex;gap:6px;margin-top:8px;}
 
   .empty-state{text-align:center;padding:40px 16px;color:var(--ink-soft);}
@@ -216,7 +211,7 @@
 
   #photoInput{display:none;}
   .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
-  #view-setup .card p{font-size:13px;color:var(--ink-soft);line-height:1.5;margin:0 0 10px;}
+  #view-setup .card p{font-size:calc(13px * var(--text-scale));color:var(--ink-soft);line-height:1.5;margin:0 0 10px;}
   #view-setup ol{font-size:13px;color:var(--ink-soft);line-height:1.6;padding-left:20px;margin:0 0 10px;}
   #setupGate{position:fixed;inset:0;background:var(--bg);z-index:300;overflow-y:auto;display:none;padding:20px 16px calc(20px + env(safe-area-inset-bottom));}
 </style>
@@ -377,12 +372,10 @@
       <div id="helpTopicsWrap" style="display:none;"></div>
     </div>
     <h2 class="section-title">Display</h2>
-    <div class="card" style="display:flex;align-items:flex-start;gap:10px;">
-      <input type="checkbox" id="toggleTextLg" style="width:20px;height:20px;flex:none;margin-top:2px;">
-      <div>
-        <label for="toggleTextLg" style="font-weight:700;font-size:13.5px;display:block;">Larger text</label>
-        <div class="hint" id="textLgHint">Bumps up text size on lead entry, lists, and forms across the app. Leaves the tab bar, event pill, and badges alone so nothing overflows.</div>
-      </div>
+    <div class="card">
+      <label for="textScaleSlider" style="font-weight:700;font-size:13.5px;display:block;margin-bottom:8px;">Text size <span id="textScaleValue" style="font-weight:400;color:var(--ink-soft);"></span></label>
+      <input type="range" id="textScaleSlider" min="100" max="160" step="5">
+      <div class="hint" id="textLgHint" style="margin-top:8px;">Scales text on lead entry, lists, and forms across the app — drag to whatever's comfortable to read. Defaults larger for easier reading at a booth. Leaves the tab bar, event pill, and badges alone so nothing overflows.</div>
     </div>
     <h2 class="section-title">Connection</h2>
     <div class="card">
@@ -513,7 +506,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.8.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.9.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -521,7 +514,7 @@ const LS_FIREBASE = 'compassleads.firebaseConfig';
 const LS_APIKEY   = 'compassleads.apiKey';
 const LS_WORKER   = 'compassleads.workerName';
 const LS_ACTIVE_EVENT = 'compassleads.activeEventId'; // per-device: which event THIS phone is on
-const LS_TEXT_LG = 'compassleads.textLg'; // per-device: larger-text display preference
+const LS_TEXT_SCALE = 'compassleads.textScale'; // per-device: text-size preference, percent (100 = normal); defaults larger
 const LS_ATTENDEE_SORT = 'compassleads.attendeeSort'; // per-device: remembered attendee-table sort column + direction
 const LS_ATTENDEE_COLWIDTHS = 'compassleads.attendeeColWidths'; // per-device: remembered attendee-table column widths (px), keyed by column key
 
@@ -603,18 +596,39 @@ function renderHelpTopics(){
 }
 renderHelpTopics(); // static content — doesn't depend on Firebase, so render right away
 
-// Larger-text preference: static too, so wire it up immediately rather than
+// Text-size preference: static too, so wire it up immediately rather than
 // waiting on prefillSetupView (which only runs when the Setup tab opens).
-(function initTextLgToggle(){
-  const cb = document.getElementById('toggleTextLg');
-  const on = localStorage.getItem(LS_TEXT_LG) === '1';
-  cb.checked = on;
-  document.body.classList.toggle('text-lg', on);
-  cb.addEventListener('change', () => {
-    document.body.classList.toggle('text-lg', cb.checked);
-    localStorage.setItem(LS_TEXT_LG, cb.checked ? '1' : '0');
-  });
+// Defaults larger (120%) rather than the old on/off toggle's default-off,
+// migrating anyone who had the old "Larger text" checkbox off so their
+// device doesn't suddenly jump to a bigger size than they'd set before.
+(function initTextScaleSlider(){
+  const slider = document.getElementById('textScaleSlider');
+  const valueLabel = document.getElementById('textScaleValue');
+  const stored = localStorage.getItem(LS_TEXT_SCALE);
+  let val;
+  if(stored !== null){
+    val = parseInt(stored, 10);
+  } else {
+    const legacyOff = localStorage.getItem('compassleads.textLg') === '0';
+    val = legacyOff ? 100 : 120;
+  }
+  if(!Number.isFinite(val)) val = 120;
+  val = Math.min(160, Math.max(100, val));
+  applyTextScale(val);
+  if(slider){
+    slider.value = String(val);
+    if(valueLabel) valueLabel.textContent = val + '%';
+    slider.addEventListener('input', () => {
+      const v = parseInt(slider.value, 10);
+      applyTextScale(v);
+      if(valueLabel) valueLabel.textContent = v + '%';
+      localStorage.setItem(LS_TEXT_SCALE, String(v));
+    });
+  }
 })();
+function applyTextScale(percent){
+  document.documentElement.style.setProperty('--text-scale', String(percent / 100));
+}
 
 function uid(){ return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }

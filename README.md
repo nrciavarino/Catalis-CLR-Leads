@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.7.0` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.8.0` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -41,6 +41,8 @@ matches what's in this repo before assuming a device is up to date)
 - **Click-to-sort attendee list** — tap any column header to sort the table by that column; tap
   again to reverse direction. The chosen column and direction are remembered on that device for
   next time
+- **Resizable attendee columns** — drag the edge of any column header to widen or narrow it; the
+  size is remembered per column on that device, so it doesn't reset the next time the table loads
 - **Add an attendee straight to leads** — a quick action on each attendee row opens the same
   review/edit screen a badge scan would, prefilled with that attendee's info
 - **Event analytics screen** — a deeper, current-event-only view with a bar-chart breakdown of
@@ -60,12 +62,11 @@ matches what's in this repo before assuming a device is up to date)
   Reps who are both on the same event still share leads, attendees, and duplicate warnings live.
   Add, rename, or delete events from the Events tab; a brand-new device with no choice yet falls
   back to whatever event was most recently made active anywhere on the team
-- **In-app help** — a single Help section in the Setup tab lists every topic (the event switcher,
-  photo reading, the sync dot, lead badges, CSV export, attendee-list matching, duplicate
-  warnings, web contact lookup, the current-software field, team activity, the prize-winner
-  picker, and event analytics) — tap one for a plain-English explanation without leaving the
-  screen. The inline "?" icons that used to sit scattered next to individual controls throughout
-  the app are gone; Setup → Help is now the one place to look
+- **In-app help** — a single "What do you need help with?" menu in the Setup tab, collapsed by
+  default — tap it to expand the full list of topics (event switcher, photo reading, sync dot,
+  lead badges, CSV export, attendee-list matching, duplicate warnings, web contact lookup,
+  current-software field, team activity, prize winner, event analytics), then tap any topic for
+  a plain-English explanation without leaving the screen
 - **Salesforce-ready export** — CSV with First/Last Name, Company, Title, Email, Phone, Lead
   Source, Contact Source, and more
 - **Installable** — "Add to Home Screen" on iOS/Android for an app-like icon, no App Store
@@ -194,6 +195,14 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.8.0**
+  - Added: resizable attendee-table columns — drag a column header's edge to widen/narrow it,
+    remembered per column on that device
+  - Changed: Setup → Help is now a collapsed "What do you need help with?" menu that expands to
+    show the full topic list, instead of listing every topic on the screen right away
+  - Changed: the attendee table's Name columns no longer use a fixed 72px width; they size like
+    any other column and can be resized like one, on phone and desktop alike (the phone-width
+    freeze-in-place behavior is unchanged — only the sizing was)
 - **v1.7.0**
   - Fixed: the frozen Name columns in the attendee table no longer stay cramped at a fixed 72px
     on tablet/desktop-width screens — above roughly 700px wide, Name unfreezes and sizes like any

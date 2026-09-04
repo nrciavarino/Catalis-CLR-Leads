@@ -506,7 +506,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.9.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.9.1'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -819,7 +819,7 @@ function switchTab(name){
     b.classList.toggle('active', isActive);
     if(isActive) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
   });
-  if(name === 'scan') startCamera(); else stopCamera();
+  if(name === 'scan') startCamera(); else pauseCamera();
   if(name === 'leads'){ renderLeadsList(); renderTeamAnalytics(); }
   if(name === 'attendees') renderAttendeeTable();
   if(name === 'events') renderEventsList();
@@ -1583,7 +1583,6 @@ document.getElementById('btnExportCsv').onclick = () => {
 /* ---------- camera / QR scanning ---------- */
 async function startCamera(){
   const video = document.getElementById('camVideo');
-  if(State.qrScanner) return;
   if(!('mediaDevices' in navigator) || !navigator.mediaDevices.getUserMedia){
     showCamUnavailable('Camera access isn\'t available in this browser.');
     return;
@@ -1593,9 +1592,11 @@ async function startCamera(){
     return;
   }
   try{
-    State.qrScanner = new QrScanner(video, result => onQrDetected(result.data || result), {
-      returnDetailedScanResult: true, highlightScanRegion: false, highlightCodeOutline: false, maxScansPerSecond: 5,
-    });
+    if(!State.qrScanner){
+      State.qrScanner = new QrScanner(video, result => onQrDetected(result.data || result), {
+        returnDetailedScanResult: true, highlightScanRegion: false, highlightCodeOutline: false, maxScansPerSecond: 5,
+      });
+    }
     await State.qrScanner.start();
     hideCamOffOverlay();
     document.getElementById('scanStatus').textContent = 'Point camera at badge QR code';
@@ -1622,9 +1623,23 @@ function showCamUnavailable(msg){
   State.camAvailable = false;
 }
 function hideCamOffOverlay(){ const ov=document.getElementById('camOffOverlay'); if(ov) ov.style.display='none'; }
-function stopCamera(){ if(State.qrScanner){ State.qrScanner.stop(); State.qrScanner.destroy(); State.qrScanner=null; } }
+// Used for internal navigation only (leaving the Scan tab, opening the
+// review screen after a capture) — pauses scanning but, by default, leaves
+// the underlying camera stream running for a short grace period so coming
+// straight back doesn't need a new getUserMedia() call. That matters a lot
+// more on iOS than on desktop: Safari (especially for a home-screen-
+// installed PWA) is much more likely to re-prompt for permission on every
+// fresh camera request, rather than silently re-granting like desktop
+// Chrome does — so avoiding repeat requests within a session is the fix for
+// "had to allow the camera every time."
+function pauseCamera(){ if(State.qrScanner){ State.qrScanner.pause(); } }
+// Used only for the rep's explicit "Stop camera" tap — actually releases
+// the camera hardware/stream, since that's a deliberate turn-it-off action.
+function stopCameraFully(){
+  if(State.qrScanner){ State.qrScanner.stop(); State.qrScanner.destroy(); State.qrScanner=null; }
+}
 document.getElementById('btnToggleCam').onclick = () => {
-  if(State.qrScanner){ stopCamera(); document.getElementById('scanStatus').textContent='Camera stopped'; document.getElementById('btnToggleCam').textContent='Start camera'; }
+  if(State.qrScanner){ stopCameraFully(); document.getElementById('scanStatus').textContent='Camera stopped'; document.getElementById('btnToggleCam').textContent='Start camera'; }
   else startCamera();
 };
 let lastQrAt = 0;
@@ -1718,7 +1733,7 @@ async function extractBadgeFields(base64, mediaType){
 
 /* ---------- review / save flow ---------- */
 function openReview(lead, existingKey){
-  stopCamera();
+  pauseCamera();
   State.pendingLead = lead ? Object.assign({}, lead) : {name:'',company:'',title:'',email:'',phone:'',notes:'',source:'manual'};
   State.pendingLead._existingKey = existingKey || null;
 

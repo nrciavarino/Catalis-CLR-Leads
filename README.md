@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.9.0` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.9.1` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -197,6 +197,14 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.9.1**
+  - Fixed: iPhone reps having to re-allow the camera on nearly every scan — after each capture the
+    app was fully stopping and destroying the camera stream (`stop()` + `destroy()`), so getting
+    back to scanning required a brand-new `getUserMedia()` call every time. iOS Safari (especially
+    for a home-screen-installed PWA) is far more likely to re-prompt on each fresh call than
+    desktop Chrome is. Internal navigation (opening the review screen, switching tabs away from
+    Scan) now pauses the stream instead of releasing it, so it resumes without a new permission
+    check; tapping "Stop camera" still fully releases it, since that's a deliberate action
 - **v1.9.0**
   - Changed: text size in Setup is now a slider (100%–160%) instead of an on/off checkbox, so
     reps can pick their own comfortable size rather than one fixed "larger" preset

@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.9.1` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.10.0` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -100,6 +100,7 @@ matches what's in this repo before assuming a device is up to date)
 | `icon-192.png`, `icon-512.png` | Home-screen icons |
 | `test-badges.html`, `test-badges-2.html` | Printable/on-screen-scannable fake badges for testing the scan flow (QR, vCard, barcode, no-code, varied colors/layouts) |
 | `sample-attendees.csv`, `sample-attendees-2.csv` | Sample attendee lists matching the test badges, for exercising attendee-match and dynamic columns |
+| `firestore.rules` | Firestore security rules — requires anonymous auth (see Security notes below); publish this in the Firebase console, don't leave the project on its default test-mode rules |
 
 ## Setup
 
@@ -141,6 +142,24 @@ contact lookup. Skip it and both just fall back to manual entry.
 Setup tab → **Generate setup link** → send it privately (DM, not a public channel — it contains
 your Firebase config and API key in plain text). Anyone who opens it is fully configured
 automatically.
+
+### 6. Required: enable anonymous auth and publish the security rules
+
+Skipping this leaves the project on Firebase's default test-mode rules, which allow anyone on
+the internet with your project ID to read/write your database, and which Firebase automatically
+locks down (denying **all** requests, including the app's own) 30 days after project creation.
+
+1. Firebase console → **Authentication** → **Sign-in method** tab → **Anonymous** → **Enable** →
+   **Save**. (Nothing user-facing changes — the app signs in silently on connect, no login
+   screen.)
+2. Firebase console → **Firestore Database** → **Rules** tab → replace the contents with this
+   repo's `firestore.rules` → **Publish**.
+3. Reload the app on a device and confirm leads/attendees still load — if step 1 was skipped,
+   every read/write will fail once the rules are published.
+
+If you're re-securing a project that's already past its 30-day test-mode window and denying all
+requests, do step 1 and step 2 in that order — signing in has to work before the rules can
+require it.
 
 ## Data model (Firestore)
 
@@ -185,9 +204,19 @@ manually replace `index.html` on the host.
 
 ## Security notes
 
-- Firestore's test-mode rules let anyone with the project ID read/write the database, and expire
-  after 30 days. Fine for a short conference as long as the URL and Firebase config aren't
-  published anywhere public — treat it as an unlisted internal tool, not a locked-down one.
+- **Firestore rules require anonymous auth.** The app calls
+  `firebase.auth().signInAnonymously()` right after connecting — silent, no login
+  screen, no prompt — and `firestore.rules` (in this repo) requires
+  `request.auth != null` on every read/write. This isn't per-user data isolation
+  (every signed-in device can read/write everything, matching the shared-team-data
+  model above); it exists to stop the raw Firestore REST API from being wide open
+  to anyone on the internet with the project ID, which is what Firebase's test-mode
+  default allows and what triggers its 30-day auto-lockout warning. **You must
+  enable the Anonymous sign-in provider** (Firebase console → Authentication →
+  Sign-in method → Anonymous → Enable) and **publish `firestore.rules`**
+  (Firestore Database → Rules → paste the file's contents → Publish) — see
+  [Setup](#setup) step 6 below. Skipping either step means the app can't read or
+  write data at all once you publish the rules.
 - The Anthropic API key, Firebase config, and each device's active-event choice all live in that
   device's browser storage (`localStorage`) — clearing browsing data wipes them; re-connect via
   the setup link (bookmark it) rather than re-pasting from scratch, and re-pick the event from
@@ -197,6 +226,13 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.10.0**
+  - Added: `firestore.rules`, requiring anonymous auth on every read/write, plus a silent
+    `signInAnonymously()` call in the app's Firebase connect flow — replaces Firebase's default
+    test-mode rules (open to anyone on the internet with the project ID, and set to deny all
+    requests 30 days after project creation). See README → Security notes and Setup step 6;
+    **enabling Anonymous auth and publishing the rules is a required manual step in the Firebase
+    console**, not something this file change does on its own
 - **v1.9.1**
   - Fixed: iPhone reps having to re-allow the camera on nearly every scan — after each capture the
     app was fully stopping and destroying the camera stream (`stop()` + `destroy()`), so getting

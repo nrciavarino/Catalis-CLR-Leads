@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Anyone who has actually loaded the app counts as "signed in" — the app
+    // silently signs in anonymously on connect (see index.html connectFirebase()),
+    // no login screen, no prompt. This exists to block bots/scripts that hit the
+    // raw Firestore REST API directly without ever running the app's JS, which is
+    // exactly what test-mode's wide-open rules exposed. It is NOT per-user data
+    // isolation — every signed-in device can read/write everything, matching this
+    // app's shared-team-data design (see README → Data model).
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /events/{eventId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.resource.data.name is string;
+      allow delete: if signedIn();
+
+      match /leads/{leadId} {
+        allow read, create, update, delete: if signedIn();
+      }
+
+      match /attendees/{attendeeId} {
+        allow read, create, update, delete: if signedIn();
+      }
+    }
+
+    match /meta/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    // Anything not explicitly matched above (there shouldn't be anything —
+    // this is just a deny-by-default backstop) stays locked down.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

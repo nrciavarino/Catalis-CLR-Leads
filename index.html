@@ -283,6 +283,7 @@
       <div style="width:44px;"></div>
     </div>
     <div id="matchArea"></div>
+    <div id="pipeFixArea"></div>
     <div id="contactAlertArea"></div>
     <div class="card">
       <div class="field"><label class="field-label" for="f_name">Full name *</label><input type="text" id="f_name" placeholder="Jordan Rivera"></div>
@@ -515,7 +516,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.11.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.11.2'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -1745,7 +1746,82 @@ function parseQrPayload(text){
     const get = re => (text.match(re)||[])[1] || '';
     return {name:get(/FN:(.*)/i).trim(), company:get(/ORG:(.*)/i).trim(), title:get(/TITLE:(.*)/i).trim(), email:get(/EMAIL[^:]*:(.*)/i).trim(), phone:get(/TEL[^:]*:(.*)/i).trim(), source:'qr', rawCode:text};
   }
+  // Plain pipe-delimited badge (e.g. "Jennifer Collins | Court Operations
+  // Manager | Summit County Court | jennifer.collins@example.com |
+  // 202-555-0104"). Find the email/phone fields by pattern rather than
+  // fixed position, since those two are unambiguous; the remaining fields
+  // fall back to name, title, company in that order (the observed field
+  // order), tolerating a badge that omits title or company.
+  if(text.includes('|')){
+    const parts = text.split('|').map(s => s.trim()).filter(Boolean);
+    if(parts.length >= 2){
+      const emailIdx = parts.findIndex(p => /\S+@\S+\.\S+/.test(p));
+      const phoneIdx = parts.findIndex(p => /(\+?\d[\d\-.\s()]{6,}\d)/.test(p));
+      const email = emailIdx > -1 ? parts[emailIdx] : '';
+      const phone = phoneIdx > -1 ? parts[phoneIdx] : '';
+      const used = new Set([emailIdx, phoneIdx].filter(i => i > -1));
+      const remaining = parts.filter((_, i) => !used.has(i));
+      // name/title/company are a positional GUESS based on one observed badge
+      // layout — a badge vendor that orders these three differently will scramble
+      // them. Keep the raw pieces on the lead so the review screen can offer a
+      // one-tap fix rather than the rep having to retype from scratch.
+      return {name: remaining[0]||'', title: remaining[1]||'', company: remaining[2]||'', email, phone, source:'qr', rawCode:text, _pipeParts: remaining};
+    }
+  }
   return {name:'', company:'', title:'', email:'', phone:'', source:'qr', rawCode:text};
+}
+
+// Only name/title/company are ever a positional guess (see parseQrPayload) —
+// email/phone are found by pattern so they don't need a manual fix. Renders
+// a "tap to place it" row of the raw badge pieces so a scrambled order takes
+// one tap to correct instead of retyping the whole card by hand.
+function renderPipeFixArea(lead){
+  const area = document.getElementById('pipeFixArea');
+  if(!area) return;
+  area.innerHTML = '';
+  if(!lead || !Array.isArray(lead._pipeParts) || !lead._pipeParts.length) return;
+  const box = document.createElement('div');
+  box.className = 'alert-box';
+  box.style.background = '#FFF7E6'; box.style.borderColor = '#F3DFA6'; box.style.color = '#6b4e00';
+  box.style.flexDirection = 'column'; box.style.alignItems = 'stretch'; box.style.gap = '8px';
+  const label = document.createElement('div');
+  label.textContent = 'Name/title/company guessed from badge order — tap a piece below if something landed in the wrong field:';
+  box.appendChild(label);
+  const row = document.createElement('div');
+  row.style.display = 'flex'; row.style.flexWrap = 'wrap'; row.style.gap = '6px';
+  lead._pipeParts.forEach(text => {
+    const chip = document.createElement('div');
+    chip.style.position = 'relative';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-outline btn-sm';
+    btn.textContent = text.length > 24 ? text.slice(0, 22) + '…' : text;
+    btn.onclick = (e) => { e.stopPropagation(); togglePipeChipMenu(chip, text); };
+    chip.appendChild(btn);
+    row.appendChild(chip);
+  });
+  box.appendChild(row);
+  area.appendChild(box);
+}
+function togglePipeChipMenu(chip, text){
+  document.querySelectorAll('.pipe-chip-menu').forEach(m => m.remove());
+  const menu = document.createElement('div');
+  menu.className = 'pipe-chip-menu';
+  menu.style.cssText = 'position:absolute;top:100%;left:0;z-index:20;background:#fff;border:1px solid #ddd;border-radius:9px;box-shadow:0 2px 10px rgba(0,0,0,.18);padding:5px;display:flex;gap:4px;margin-top:4px;white-space:nowrap;';
+  [['Name','f_name'],['Title','f_title'],['Company','f_company']].forEach(([lbl, id]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn-teal btn-sm';
+    b.textContent = '→ ' + lbl;
+    b.onclick = (e) => { e.stopPropagation(); const el = document.getElementById(id); if(el) el.value = text; menu.remove(); };
+    menu.appendChild(b);
+  });
+  chip.appendChild(menu);
+  setTimeout(() => {
+    document.addEventListener('click', function closeMenu(ev){
+      if(!chip.contains(ev.target)){ menu.remove(); document.removeEventListener('click', closeMenu); }
+    });
+  }, 0);
 }
 
 /* ---------- photo capture -> vision extraction (direct browser call, user's own key) ---------- */
@@ -1836,6 +1912,7 @@ function openReview(lead, existingKey){
 
   const matchArea = document.getElementById('matchArea');
   matchArea.innerHTML = '';
+  renderPipeFixArea(State.pendingLead);
   // Skip the match-lookup entirely when this lead was just added FROM the
   // attendee list — it would immediately re-match against the very record it
   // came from and show a redundant "Use this" chip for data already applied.

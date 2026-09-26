@@ -277,6 +277,21 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.11.2**
+  - Added: since pipe-delimited badge parsing (v1.11.1) can only place email/phone with certainty —
+    name/title/company are a positional guess based on one observed badge layout, and a different
+    vendor's field order would scramble them — the review screen now shows the raw badge pieces as
+    tappable chips ("Name/title/company guessed from badge order — tap a piece below if something
+    landed in the wrong field"). Tapping a chip opens a small Name / Title / Company picker that
+    drops that piece into the chosen field in one tap. Only appears for pipe-delimited QR scans;
+    JSON, vCard, photo, and manual entry are unaffected.
+- **v1.11.1**
+  - Fixed: QR codes weren't populating any fields on scan if the badge encoded a plain pipe-delimited
+    string (e.g. `Name | Title | Company | Email | Phone`) rather than JSON or a vCard — the only two
+    formats the parser previously recognized. Everything else fell through to a blank record, which
+    looked like a broken save (Save button just bounced you back to the name field). Added a third
+    parser branch: splits on `|`, finds the email/phone fields by pattern, and maps the rest to
+    name/title/company by position. JSON and vCard QR codes are unaffected.
 - **v1.11.0**
   - Added: 1D barcode decoding (Code128/39, EAN, UPC, ITF, Codabar) — runs alongside the existing
     QR decoder against the same live camera view, so badges with only a barcode no longer fall

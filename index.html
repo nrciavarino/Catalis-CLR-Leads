@@ -12,6 +12,14 @@
 <meta name="apple-mobile-web-app-title" content="Compass Leads">
 <meta name="theme-color" content="#1d3a66">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js"></script>
+<!-- 1D barcode support (Code128/39/EAN/UPC/ITF/Codabar): qr-scanner above only
+     decodes QR. Confirmed via the package's own published unpkg entry point
+     (bare "@zxing/browser@version" resolves to its self-contained UMD build,
+     exposing the global ZXingBrowser — no separate @zxing/library script
+     needed). Still loaded defensively — see initBarcodeReader() — so if this
+     script fails to load for any reason, barcode detection just silently
+     stays off; QR scanning is completely unaffected either way. -->
+<script src="https://unpkg.com/@zxing/[email protected]"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
@@ -407,9 +415,9 @@
         <button class="btn btn-primary btn-sm" id="btnAddEngagementReason">Add</button>
       </div>
     </div>
-    <h2 class="section-title">Badge photo reading (optional)</h2>
+    <h2 class="section-title">Badge &amp; business card photo reading (optional)</h2>
     <div class="card">
-      <p>If a badge has no QR code, "No QR — take photo" can have Claude read the name/company/email off the photo automatically. This calls the Anthropic API directly from the phone using your own API key — it never touches Claude.ai. Leave blank to skip this and just type badges in manually.</p>
+      <p>If a badge has no QR code — or you're photographing a business card instead — "No QR — take photo" can have Claude read the name/company/email off the photo automatically, badge or card either way. This calls the Anthropic API directly from the phone using your own API key — it never touches Claude.ai. Leave blank to skip this and just type badges in manually.</p>
       <div class="field"><label class="field-label" for="setupApiKey">Anthropic API key</label><input type="password" id="setupApiKey" placeholder="sk-ant-…"></div>
       <button class="btn btn-outline btn-block" id="btnSaveApiKey">Save key</button>
     </div>
@@ -507,7 +515,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.10.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.11.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -527,7 +535,7 @@ const HELP_TOPICS = {
   },
   photoOcr: {
     title: 'No QR — take photo',
-    text: 'Use this when a badge has no scannable QR code. The photo goes to Claude (Anthropic\'s AI) using the API key set in Setup, which reads back whatever name, company, and email it can find. Nothing saves automatically — you still review and can edit everything before saving the lead.'
+    text: 'Use this when a badge has no scannable QR code, or when you\'re working from a business card instead of a badge — same button either way. The photo goes to Claude (Anthropic\'s AI) using the API key set in Setup, which figures out which one it\'s looking at and reads back whatever name, company, and email it can find. Nothing saves automatically — you still review and can edit everything before saving the lead.'
   },
   syncDot: {
     title: 'Sync status dot',
@@ -568,6 +576,10 @@ const HELP_TOPICS = {
   fullAnalytics: {
     title: 'Event analytics',
     text: 'A deeper breakdown for the event you\'re currently on: totals, a bar chart of Reason for Engagement, a bar chart of Current Software, and leads by rep. It\'s scoped to this one event only — it doesn\'t combine numbers across past events.'
+  },
+  crossEventMemory: {
+    title: '"You\u2019ve met before"',
+    text: 'When a scanned or entered lead\u2019s email, phone, or name+company matches someone captured at a DIFFERENT past event, the review screen shows a note with what event that was and what was said. It only checks past leads that already have that info saved, so it can\u2019t find a match from before this feature existed until that person is captured again. A name+company-only match is flagged "verify" since names repeat; an email or phone match is shown as certain.'
   }
 };
 function showHelp(key){
@@ -634,6 +646,10 @@ function applyTextScale(percent){
 function uid(){ return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function norm(s){ return (s||'').toLowerCase().normalize('NFKD').replace(/[^\w\s]/g,'').replace(/\s+/g,' ').trim(); }
+// Digits-only phone comparison, last 10 (drops a leading country code like
+// +1 so "+1 555-123-4567" and "555.123.4567" match) — used for cross-event
+// matching, where two entries for the same number are rarely typed the same way.
+function normalizePhone(s){ const digits = (s||'').replace(/\D/g,''); return digits.length > 10 ? digits.slice(-10) : digits; }
 function toast(msg, ms){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'), ms||2200); }
 function fmtTime(ts){ if(!ts) return ''; const d=new Date(ts); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
 // One-tap contact: renders an email as a mailto: link, and a phone as both a
@@ -1608,6 +1624,7 @@ async function startCamera(){
     document.getElementById('scanStatus').textContent = 'Point camera at badge QR code';
     document.getElementById('btnToggleCam').textContent = 'Stop camera';
     State.camAvailable = true;
+    startBarcodePolling(); // updates the status text above to also mention barcodes, but only once it's confirmed the decoder actually loaded — see initBarcodeReader()
   }catch(err){
     console.error(err);
     if(State.qrScanner){ try{ State.qrScanner.destroy(); }catch(e){} State.qrScanner = null; }
@@ -1638,16 +1655,78 @@ function hideCamOffOverlay(){ const ov=document.getElementById('camOffOverlay');
 // fresh camera request, rather than silently re-granting like desktop
 // Chrome does — so avoiding repeat requests within a session is the fix for
 // "had to allow the camera every time."
-function pauseCamera(){ if(State.qrScanner){ State.qrScanner.pause(); } }
+function pauseCamera(){ if(State.qrScanner){ State.qrScanner.pause(); } stopBarcodePolling(); }
 // Used only for the rep's explicit "Stop camera" tap — actually releases
 // the camera hardware/stream, since that's a deliberate turn-it-off action.
 function stopCameraFully(){
   if(State.qrScanner){ State.qrScanner.stop(); State.qrScanner.destroy(); State.qrScanner=null; }
+  stopBarcodePolling();
 }
 document.getElementById('btnToggleCam').onclick = () => {
   if(State.qrScanner){ stopCameraFully(); document.getElementById('scanStatus').textContent='Camera stopped'; document.getElementById('btnToggleCam').textContent='Start camera'; }
   else startCamera();
 };
+
+/* ---------- 1D barcode support (Code128/39/EAN/UPC/ITF/Codabar) ----------
+   qr-scanner above only decodes QR, so this runs a second, independent check
+   against the SAME live <video> element on a fixed interval, using whichever
+   ZXing global actually loaded — never touching getUserMedia or the video's
+   srcObject itself, so it can't interfere with the camera lifecycle above
+   (and the iOS "asks for permission every scan" fix that lifecycle carries).
+   Every step is defensive: if the CDN script failed to load, or its API
+   shape doesn't match what's expected, this silently no-ops and QR scanning
+   keeps working exactly as before — barcode support just doesn't activate. */
+let barcodeReader = null;
+let barcodeReaderTried = false;
+let barcodePollTimer = null;
+let barcodeDecodeInFlight = false;
+function initBarcodeReader(){
+  if(barcodeReaderTried) return barcodeReader;
+  barcodeReaderTried = true;
+  try{
+    const Ctor = (window.ZXingBrowser && window.ZXingBrowser.BrowserMultiFormatReader)
+      || (window.ZXing && window.ZXing.BrowserMultiFormatReader);
+    if(!Ctor || typeof Ctor !== 'function') return null;
+    const reader = new Ctor();
+    if(!reader || typeof reader.decodeOnceFromVideoElement !== 'function') return null;
+    barcodeReader = reader;
+  }catch(e){ console.error('Barcode reader unavailable, continuing QR-only:', e); barcodeReader = null; }
+  return barcodeReader;
+}
+function startBarcodePolling(){
+  if(barcodePollTimer) return; // already running
+  const reader = initBarcodeReader();
+  if(!reader) return; // ZXing didn't load or its API didn't match — QR-only, silently
+  // Only claim barcode support in the on-screen instructions once it's
+  // actually confirmed active — never promise something that silently isn't
+  // there (e.g. the CDN was unreachable on this network).
+  const statusEl = document.getElementById('scanStatus');
+  if(statusEl && statusEl.textContent === 'Point camera at badge QR code'){
+    statusEl.textContent = 'Point camera at badge QR code or barcode';
+  }
+  const video = document.getElementById('camVideo');
+  barcodePollTimer = setInterval(() => {
+    // Skip a tick rather than let attempts pile up: no live camera, review
+    // screen already open, no actual video frame yet (readyState
+    // HAVE_CURRENT_DATA=2+), or a previous attempt from this same timer is
+    // still in flight.
+    if(barcodeDecodeInFlight || !State.qrScanner || State.pendingLead || !video || video.readyState < 2) return;
+    barcodeDecodeInFlight = true;
+    reader.decodeOnceFromVideoElement(video).then(result => {
+      barcodeDecodeInFlight = false;
+      const text = result && result.getText && result.getText();
+      if(text) onQrDetected(text); // shared entry point — same dedupe/debounce as a QR hit
+    }).catch(() => {
+      // NotFoundException on nearly every tick by design (most frames have
+      // no barcode in view) — this is the expected, silent case.
+      barcodeDecodeInFlight = false;
+    });
+  }, 450);
+}
+function stopBarcodePolling(){
+  if(barcodePollTimer){ clearInterval(barcodePollTimer); barcodePollTimer = null; }
+  barcodeDecodeInFlight = false;
+}
 let lastQrAt = 0;
 function onQrDetected(text){
   const now = Date.now();
@@ -1721,7 +1800,7 @@ async function extractBadgeFields(base64, mediaType){
       max_tokens: 500,
       messages: [{ role:'user', content: [
         {type:'image', source:{type:'base64', media_type: mediaType, data: base64}},
-        {type:'text', text: 'This is a photo of a conference name badge. Extract the attendee\'s full name, company/agency, job title, email, and phone number if visible. Respond with ONLY raw JSON, no markdown fences, no explanation, in exactly this shape: {"name":"","company":"","title":"","email":"","phone":""}. Use an empty string for any field that is not visible on the badge.'}
+        {type:'text', text: 'This is a photo of either a conference name badge or a business card — decide which from the layout and content. Extract the person\'s full name, company/agency, job title, email, and phone number, whichever are visible. Respond with ONLY raw JSON, no markdown fences, no explanation, in exactly this shape: {"name":"","company":"","title":"","email":"","phone":""}. Use an empty string for any field that is not visible.'}
       ]}]
     })
   });
@@ -1792,6 +1871,99 @@ function openReview(lead, existingKey){
   if(!State.pendingLead.name){
     setTimeout(() => { const el = document.getElementById('f_name'); if(el) el.focus(); }, 50);
   }
+  // Cross-event relationship memory — async, so it renders in below whatever
+  // synchronous content is already up. Shows a brief "checking" line right
+  // away rather than nothing, since a slow venue-wifi connection (a known,
+  // documented risk for this app) could otherwise make the rep hit "Save
+  // lead" and move on before this ever gets a chance to appear. Guarded
+  // against the rep having moved on to a different lead (saved, closed, or
+  // opened another) by the time it resolves.
+  const reviewLead = State.pendingLead;
+  const checkingEl = document.createElement('div');
+  checkingEl.className = 'hint'; checkingEl.id = 'crossEventChecking'; checkingEl.style.margin = '2px 0 8px';
+  checkingEl.textContent = 'Checking past events\u2026';
+  matchArea.appendChild(checkingEl);
+  findCrossEventMatch(reviewLead).then(match => {
+    if(State.pendingLead !== reviewLead) return; // moved on already — drop it, don't touch a screen that isn't theirs anymore
+    const stillThere = document.getElementById('crossEventChecking');
+    if(stillThere) stillThere.remove();
+    if(match) renderCrossEventBanner(match);
+  });
+}
+// Searches every event's leads at once (a Firestore "collection group"
+// query — see README → Data model) for the best prior match to the lead
+// currently being reviewed, excluding the current event (same-event
+// duplicates are handled separately by findExistingLead above). Checked in
+// order of confidence: exact email, then exact phone, then exact name+company
+// (kept lower-confidence since names repeat across different people).
+async function findCrossEventMatch(lead){
+  if(!State.db || !State.activeEventId) return null;
+  const email = (lead.email||'').trim().toLowerCase();
+  const phone = normalizePhone(lead.phone||'');
+  const name = (lead.name||'').trim();
+  const company = (lead.company||'').trim();
+  try{
+    if(email){
+      // limit(20), not a smaller number: Firestore doesn't guarantee document
+      // order for a plain equality filter, and picking "most recent" happens
+      // client-side in pickBestCrossEventHit — so a wider pull here means a
+      // rep who's shown up under the same email at many past events still
+      // reliably surfaces their true most recent encounter, not an arbitrary
+      // one. Costs a few extra small-document reads in that rare case, never
+      // an extra index.
+      const snap = await State.db.collectionGroup('leads').where('emailLower','==',email).limit(20).get();
+      const hit = pickBestCrossEventHit(snap);
+      if(hit) return Object.assign({matchedOn:'email', confidence:'exact'}, hit);
+    }
+    if(phone){
+      const snap = await State.db.collectionGroup('leads').where('phoneNormalized','==',phone).limit(20).get();
+      const hit = pickBestCrossEventHit(snap);
+      if(hit) return Object.assign({matchedOn:'phone', confidence:'exact'}, hit);
+    }
+    if(name && company){
+      const snap = await State.db.collectionGroup('leads').where('name','==',name).where('company','==',company).limit(20).get();
+      const hit = pickBestCrossEventHit(snap);
+      if(hit) return Object.assign({matchedOn:'name and company', confidence:'possible'}, hit);
+    }
+  }catch(e){
+    // The name+company query needs a composite index that has to be created
+    // once in the Firestore console (see README → Setup) — until that's
+    // done, this leg fails here. Fail silently either way: this is a bonus
+    // insight on top of the review screen, never something that should
+    // block or slow down saving a lead.
+    console.error('Cross-event lookup failed:', e);
+  }
+  return null;
+}
+function pickBestCrossEventHit(snap){
+  let best = null;
+  snap.forEach(doc => {
+    const parentEvent = doc.ref.parent && doc.ref.parent.parent;
+    if(!parentEvent) return; // shouldn't happen for a leads collection-group match, but never trust it blindly
+    const eventId = parentEvent.id; // events/{eventId}/leads/{leadId} -> eventId
+    if(eventId === State.activeEventId) return; // that's a same-event duplicate, handled elsewhere
+    const data = doc.data();
+    if(!best || (data.savedAt||0) > (best.data.savedAt||0)) best = {data, eventId};
+  });
+  if(!best) return null;
+  const ev = State.events.find(e => e.id === best.eventId);
+  return {lead: best.data, eventName: (ev && ev.name) || 'a previous event'};
+}
+function renderCrossEventBanner(match){
+  const matchArea = document.getElementById('matchArea');
+  if(!matchArea) return; // review screen already closed by the time this resolved
+  const d = match.lead;
+  const div = document.createElement('div');
+  div.className = 'alert-box';
+  div.style.background = '#EAF1FB'; div.style.borderColor = '#C9DCF2'; div.style.color = '#1d3a66';
+  const label = match.confidence === 'exact' ? 'You\u2019ve met before' : 'Possible past match \u2014 verify';
+  const detailBits = [];
+  if(d.notes) detailBits.push('\u201c' + esc(d.notes) + '\u201d');
+  if(d.currentSoftware) detailBits.push('was on ' + esc(d.currentSoftware));
+  if(d.reasonForEngagement) detailBits.push(esc(d.reasonForEngagement));
+  div.innerHTML = `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="#3B6EA8" stroke-width="2"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+    <div style="flex:1;"><b>${label}</b> \u2014 ${esc(match.eventName)}, ${fmtTime(d.savedAt)}${detailBits.length ? ': ' + detailBits.join(' \u00b7 ') : ''}</div>`;
+  matchArea.appendChild(div);
 }
 function applyAttendeeMatch(silent){
   const a = State.pendingLead && State.pendingLead._suggestedMatch;
@@ -1922,6 +2094,12 @@ document.getElementById('btnSaveLead').onclick = async () => {
   const lead = {
     name, company: document.getElementById('f_company').value.trim(), title: document.getElementById('f_title').value.trim(),
     email, phone, notes: document.getElementById('f_notes').value.trim(),
+    // Derived, normalized copies used only for cross-event matching (see
+    // findCrossEventMatch) — raw email/phone above are what's shown/edited/
+    // exported; these two just make later equality lookups reliable
+    // regardless of how this one was capitalized or punctuated.
+    emailLower: email.toLowerCase(),
+    phoneNormalized: normalizePhone(phone),
     currentSoftware: document.getElementById('f_software').value,
     reasonForEngagement: document.getElementById('f_reason').value,
     contactSource: (State.pendingLead && State.pendingLead.contactSource) || (email||phone ? 'badge' : ''),

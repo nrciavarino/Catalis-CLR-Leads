@@ -7,15 +7,20 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.10.0` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.11.0` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
 
 ## Features
 
-- **Badge scanning** — QR codes (JSON payload, vCard, or a bare ID string), or a photo read by
-  Claude's vision API if a badge has no code at all
+- **Badge scanning** — QR codes (JSON payload, vCard, or a bare ID string), 1D barcodes
+  (Code128/39, EAN, UPC, ITF, Codabar), or a photo read by Claude's vision API if a badge has no
+  code at all. QR and barcode both run continuously off the same live camera view — nothing to
+  pick or switch between, the app just recognizes whichever one is in frame
+- **Business card photo reading** — the same "No QR — take photo" flow used for code-less badges
+  also recognizes business cards; Claude decides which one it's looking at and reads back
+  whatever name/company/title/email/phone it can find either way
 - **Attendee cross-reference** — upload any CSV; name/company/email/phone columns are matched
   automatically however they're labeled, and anything else in the file becomes its own column
 - **Web-search fallback** — if a lead is missing contact info and the attendee list doesn't have
@@ -45,6 +50,11 @@ matches what's in this repo before assuming a device is up to date)
   size is remembered per column on that device, so it doesn't reset the next time the table loads
 - **Add an attendee straight to leads** — a quick action on each attendee row opens the same
   review/edit screen a badge scan would, prefilled with that attendee's info
+- **Cross-event relationship memory** — if a lead's email, phone, or name+company matches
+  someone captured at a *different* past event, the review screen surfaces it: which event, when,
+  and what was noted. An email or phone match is shown as certain; a name+company-only match is
+  flagged "verify" since names repeat. Only works for leads captured from v1.11.0 onward — see
+  [Known limitations](#known-limitations)
 - **Event analytics screen** — a deeper, current-event-only view with a bar-chart breakdown of
   Reason for Engagement and Current Software, plus totals and a leads-by-rep breakdown, reached
   from a button on the Leads tab
@@ -84,8 +94,13 @@ matches what's in this repo before assuming a device is up to date)
   (`anthropic-dangerous-direct-browser-access`), for:
   - reading badge photos (vision)
   - the optional web-search contact lookup (`web_search` tool)
-- **[qr-scanner](https://github.com/nimiq/qr-scanner)** for QR decoding (1D barcodes are
-  intentionally not decoded — badges with only a barcode fall back to photo/manual entry)
+- **[qr-scanner](https://github.com/nimiq/qr-scanner)** for QR decoding, running continuously
+  against the live camera view
+- **[@zxing/browser](https://github.com/zxing-js/browser)** for 1D barcode decoding (Code128/39,
+  EAN, UPC, ITF, Codabar) — a second, independent check against that same camera view on a
+  ~450ms interval, so QR and barcode both work without the rep picking a mode. Loaded
+  defensively: if this script fails to load, or its API doesn't match what's expected, barcode
+  detection just silently stays off and QR scanning is completely unaffected
 - **[PapaParse](https://www.papaparse.com/)** for CSV import/export
 - Hosted anywhere static (GitHub Pages, Firebase Hosting, Netlify) — camera access requires
   HTTPS, so it won't work opened directly from a local file
@@ -161,11 +176,26 @@ If you're re-securing a project that's already past its 30-day test-mode window 
 requests, do step 1 and step 2 in that order — signing in has to work before the rules can
 require it.
 
+### 7. Required for cross-event memory: one Firestore index
+
+The email and phone matches work automatically (Firestore indexes single fields by default,
+including for the collection-group query this feature relies on). The name+company match needs
+one composite index created once:
+
+1. Firebase console → **Firestore Database** → **Indexes** tab → **Add index**.
+2. **Collection ID:** `leads`, scope **Collection group** (not "Collection").
+3. Fields: `name` (Ascending), then `company` (Ascending) → **Create**.
+
+Until this is created, name+company matching silently fails (logged to the browser console, not
+shown to the rep) while email/phone matching keeps working — see
+[Data model](#data-model-firestore) below.
+
 ## Data model (Firestore)
 
 ```
 events/{eventId}                        { name, createdAt, attendeeColumns: [{key,label}, ...] }
 events/{eventId}/leads/{leadId}          { name, company, title, email, phone, notes,
+                                            emailLower, phoneNormalized,
                                             currentSoftware, reasonForEngagement, contactSource,
                                             source, matched, webSearchAttempted, scannedBy, savedAt }
 events/{eventId}/attendees/{attendeeId}  { firstName, lastName, company, email, phone, ...any
@@ -184,6 +214,18 @@ Attendee columns are file-driven: the four canonical fields (First Name, Last Na
 Email, Phone) always exist; anything else in an uploaded CSV becomes its own column,
 auto-registered on the event so every rep's table matches. Leads deliberately stay single-field
 for name (a badge scan or photo read has no reliable way to split first/last).
+
+`emailLower` (lowercased email) and `phoneNormalized` (digits-only, last 10) are derived,
+write-time-only copies used exclusively for cross-event matching — never shown or exported, so
+they can't be confused with the real `email`/`phone` fields a rep sees and edits. They're saved
+starting in v1.11.0; leads captured before that don't have them and won't surface in a future
+cross-event match (see [Known limitations](#known-limitations)).
+
+Cross-event matching runs a Firestore **collection-group query** across every event's `leads`
+subcollection at once, rather than a separate top-level "contacts" collection — no data
+restructuring, and the existing security rule for `events/{eventId}/leads/{leadId}` already
+covers it (a collection-group query is still bound by the same per-path rule). See
+[Setup](#setup) step 7 for the one index this needs.
 
 `contactSource` on a lead is one of `badge`, `attendee-list`, `web-search`, or empty — mainly so
 a web-found contact can be flagged for verification in the CSV export rather than treated as
@@ -223,9 +265,31 @@ manually replace `index.html` on the host.
   the Events tab.
 - The one-tap setup link embeds both secrets in the URL itself. Share it privately; don't post it
   anywhere that gets logged or archived outside your control.
+- **Cross-event memory widens what a routine lookup touches.** Before v1.11.0, a device only ever
+  read the one event's data it was actively subscribed to. The cross-event match runs a query
+  across *every* event's leads in the project on every single scan/save, not just the current
+  one — so in practice (not just in theory) any connected device now regularly reads lead data,
+  including notes, from events it was never switched to. This isn't a new hole in the trust
+  model — the existing rules already allow any signed-in device to read any event's data on
+  request — but it changes an occasional possibility into routine behavior. If that's a problem
+  for how your team uses this (e.g. notes written assuming only that event's reps would see
+  them), that's worth knowing before turning this on, not after.
 
 ## Changelog
 
+- **v1.11.0**
+  - Added: 1D barcode decoding (Code128/39, EAN, UPC, ITF, Codabar) — runs alongside the existing
+    QR decoder against the same live camera view, so badges with only a barcode no longer fall
+    back to photo/manual entry. On-screen instructions only claim barcode support once it's
+    confirmed active, never unconditionally
+  - Added: business card photo reading — the existing "No QR — take photo" flow now recognizes
+    business cards as well as badges; same button, Claude decides which one it's looking at
+  - Added: cross-event relationship memory — the review screen now surfaces a prior encounter
+    with this person from a *different* past event (email/phone match shown as certain,
+    name+company shown as "verify"), with a visible "Checking past events…" indicator so a slow
+    connection doesn't make the check silently disappear before it has a chance to complete.
+    Requires one Firestore composite index for the name+company match — see Setup step 7. Only
+    matches leads captured from this version onward (see Known limitations)
 - **v1.10.0**
   - Added: `firestore.rules`, requiring anonymous auth on every read/write, plus a silent
     `signInAnonymously()` call in the app's Firebase connect flow — replaces Firebase's default
@@ -297,8 +361,15 @@ manually replace `index.html` on the host.
 
 ## Known limitations
 
-- QR only — badges with just a 1D barcode aren't decoded (there's no reliable, dependency-light
-  way to do that from a browser); they fall back to photo/manual entry.
+- 1D barcode decoding depends on a third-party CDN script (`@zxing/browser`) loading
+  successfully; if it doesn't (network policy, ad-blocker, offline install), the app falls back
+  to QR + photo/manual entry with no error shown to the rep — the on-screen instructions
+  correctly stop mentioning "barcode" in that case, but there's no visible warning that it's
+  degraded from a normal launch. Check the browser console if barcode scans aren't registering.
+- Cross-event relationship memory only matches leads saved from v1.11.0 onward — `emailLower`
+  and `phoneNormalized` aren't retroactively added to leads captured before that, so a real past
+  encounter from an older event won't surface until that person is captured again after this
+  update. There's also no bulk backfill tool for existing data.
 - Splitting a single "Name" column (when a CSV has no separate First/Last columns) is a
   last-word-is-last-name guess — compound last names will split wrong.
 - No offline support. Every screen assumes live connectivity to Firestore and, if used, the

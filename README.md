@@ -282,6 +282,11 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.13.0**
+  - Added: "🎯 Submit a MIC opportunity" button on the Scan tab, linking directly to the team's
+    existing Microsoft Forms/SharePoint MIC submission form. Reps already submit MIC items that
+    way — this backlog item turned out to need only a link, not a built tool, once that was
+    confirmed.
 - **v1.12.0**
   - Added: a PIN (SHA-256 hashed on-device — the plaintext is never stored) now optionally gates
     the Firebase config and Anthropic API key cards under Setup, so they can't be changed by

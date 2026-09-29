@@ -290,6 +290,7 @@
       <button class="btn btn-dark grow" id="btnTakePhoto">No QR — take photo</button>
     </div>
     <button class="btn btn-teal btn-block" id="btnShowMyCard" style="margin-top:10px;"><span aria-hidden="true">📇</span> My card — show to attendee</button>
+    <a class="btn btn-outline btn-block" style="margin-top:10px;text-decoration:none;" href="https://catalisgov.sharepoint.com/:l:/s/CL-SalesEngineer/JABAq61ONHExSKMLDOklMheLAQNnG-tiCKehy-uzkMsH33Q?nav=NzFmZjgzNTMtY2ZlMi00ODFlLWI2NDYtMjVkYmZiYmIzODVl" target="_blank" rel="noopener"><span aria-hidden="true">🎯</span> Submit a MIC opportunity</a>
     <input type="file" id="photoInput" accept="image/*" capture="environment">
     <div class="hint" style="margin-top:10px;text-align:center;" id="syncHint">
       Live sync assumes solid venue wifi. Leads save instantly and sync to the whole team within a second or two.
@@ -573,7 +574,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.12.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.13.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;

@@ -193,7 +193,7 @@ shown to the rep) while email/phone matching keeps working — see
 ## Data model (Firestore)
 
 ```
-events/{eventId}                        { name, createdAt, attendeeColumns: [{key,label}, ...] }
+events/{eventId}                        { name, createdAt, archived, attendeeColumns: [{key,label}, ...] }
 events/{eventId}/leads/{leadId}          { name, company, title, email, phone, notes,
                                             emailLower, phoneNormalized,
                                             currentSoftware, reasonForEngagement, contactSource,
@@ -204,6 +204,11 @@ meta/shared                              { activeEventId }
 meta/competitors                         { list: [...] }
 meta/engagementReasons                   { list: [...] }
 ```
+
+`archived` (boolean, added in v1.12.0) is a pure UI declutter flag, set on the event doc itself.
+It has no effect on cross-event matching — an archived event's leads stay just as queryable by
+the collection-group query described below as any active event's. An event with no `archived`
+field (everything created before v1.12.0) is treated as active.
 
 `meta/shared.activeEventId` is now only a **default** for a brand-new device that hasn't picked
 an event yet — each phone tracks its own active event locally (in that device's browser
@@ -277,6 +282,57 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.12.0**
+  - Added: a PIN (SHA-256 hashed on-device — the plaintext is never stored) now optionally gates
+    the Firebase config and Anthropic API key cards under Setup, so they can't be changed by
+    accident at a shared booth device. This is a light deterrent against fumbling, not real
+    security — it's a client-side check in a single-file app, fully bypassable by anyone with dev
+    tools, and it does nothing to protect the credentials themselves once they're set. The
+    competitor/reason lists are unaffected and stay open to the whole team either way.
+  - Added: "📇 My card" on the Scan tab — generates a QR-encoded vCard from a new "Your contact
+    card" section under Setup (title, company, email, phone; name comes from "Signed in as"), so
+    a rep can hand their own info back to an attendee the same visual way they just scanned
+    theirs. Sequential, not simultaneous — iOS Safari has no Web NFC write support, so a real
+    tap-together exchange isn't possible cross-platform; this is the practical substitute. New
+    dependency: `qrcodejs` (davidshimjs, cdnjs, pinned to 1.0.0) for generation — separate from the
+    ZXing/qr-scanner libraries already in use for decoding. Loaded defensively; if the CDN is
+    unreachable, the modal falls back to plain text instead of failing silently.
+  - Added: "Leads by company" on the full analytics screen — the top 10 companies by lead count,
+    each with its own top Reason for Engagement and top Current Software, so "what does Tyler
+    Technologies specifically care about" has a direct answer instead of only ever seeing reason
+    and software tallied across every company at once.
+  - Added: "📝 Generate event readout" on the Leads tab — sends an aggregated summary of the
+    current event's leads (top companies, reason/software breakdowns, and up to 40 leads' notes —
+    not a full PII dump) to Claude via the same Anthropic API key already used for photo OCR, and
+    renders a plain-text executive one-sheet (Overview / Key Takeaways / Notable Conversations /
+    Competitive Signals / Recommended Follow-ups) with Copy and Print/Save-PDF actions.
+  - Added: events can now be archived (a button per active event on the Events tab) to keep a
+    long-running booth's event list from growing forever. Archiving is UI-only — an archived
+    event's leads stay fully queryable by cross-event matching, exactly like an active event's.
+    Archived events collapse behind an "Archived events (N)" toggle; a new search box above the
+    Events list searches both active and archived events by name and auto-expands the archived
+    section if a match is only found there.
+  - Fixed (found during an audit pass): several `JSON.parse(localStorage.getItem(...))` calls had
+    no error handling — a single corrupted localStorage value (hand-edited, truncated by a
+    storage-quota hiccup, or left over from a much older version) could throw before the app ever
+    rendered anything, taking the whole page down to a permanent blank screen over one bad key.
+    Added a `safeJSONParse` helper used everywhere this pattern appears, with a same-effect
+    fallback in each case (e.g. a corrupted saved Firebase config now just re-shows the normal
+    "connect" gate instead of hanging silently).
+  - Fixed (found during the same pass): the rep's own vCard (for "My card" above) now escapes
+    commas, semicolons, backslashes, and stray newlines per the vCard 3.0 spec, so a card field
+    containing one of those characters can't produce a malformed or misread vCard.
+- **v1.11.3**
+  - Fixed: barcode scanning did nothing at all — no error, no status change, camera just sat
+    there. Root cause was two-fold. First, the barcode library loaded was `@zxing/browser`, a thin
+    wrapper that has an undeclared runtime dependency on a separate package (`@zxing/library`) which
+    was never loaded — a documented failure mode (zxing-js/browser issue #55) where
+    `BrowserMultiFormatReader` silently stops working. Switched the CDN script to `@zxing/library`
+    directly, which is self-contained. Second, even once loading correctly, 1D formats (Code128,
+    EAN, UPC, etc.) aren't reliably attempted without being explicitly requested — added format
+    hints (`DecodeHintType.POSSIBLE_FORMATS`) listing every format this app advertises support for,
+    rather than relying on the reader's default behavior. QR scanning (handled by a separate
+    decoder) was unaffected throughout.
 - **v1.11.2**
   - Added: since pipe-delimited badge parsing (v1.11.1) can only place email/phone with certainty —
     name/title/company are a positional guess based on one observed badge layout, and a different
@@ -376,7 +432,7 @@ manually replace `index.html` on the host.
 
 ## Known limitations
 
-- 1D barcode decoding depends on a third-party CDN script (`@zxing/browser`) loading
+- 1D barcode decoding depends on a third-party CDN script (`@zxing/library`) loading
   successfully; if it doesn't (network policy, ad-blocker, offline install), the app falls back
   to QR + photo/manual entry with no error shown to the rep — the on-screen instructions
   correctly stop mentioning "barcode" in that case, but there's no visible warning that it's
@@ -389,5 +445,15 @@ manually replace `index.html` on the host.
   last-word-is-last-name guess — compound last names will split wrong.
 - No offline support. Every screen assumes live connectivity to Firestore and, if used, the
   Anthropic API.
-- Photo-based badge reading and the web-search lookup both require the person using that device
-  to have entered their own Anthropic API key under Setup.
+- Photo-based badge reading, the web-search lookup, and the event readout (v1.12.0) all require
+  the person using that device to have entered their own Anthropic API key under Setup.
+- The Setup PIN (v1.12.0) is a light deterrent against accidental edits at a shared device, not
+  real access control — it's a client-side check in a single HTML file, so anyone who opens dev
+  tools (or just reads the source) can bypass it. It protects against fumbling, not a
+  determined person.
+- The event readout (v1.12.0) sends an aggregated summary of the current event's leads —
+  company/reason/software breakdowns plus up to 40 leads' notes (name, company, and the note
+  text) — to the Anthropic API to generate the write-up. It does not send every lead's full
+  contact info, but it isn't a fully anonymized aggregate either; anyone comfortable with the
+  existing photo-OCR feature sending badge photos to the same API should find this consistent
+  with that.

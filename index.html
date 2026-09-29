@@ -13,14 +13,27 @@
 <meta name="theme-color" content="#1d3a66">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js"></script>
 <!-- 1D barcode support (Code128/39/EAN/UPC/ITF/Codabar): qr-scanner above only
-     decodes QR. Confirmed via the package's own published unpkg entry point
-     (bare "@zxing/browser@version" resolves to its self-contained UMD build,
-     exposing the global ZXingBrowser — no separate @zxing/library script
-     needed). Still loaded defensively — see initBarcodeReader() — so if this
+     decodes QR. Deliberately loading @zxing/library directly rather than the
+     @zxing/browser wrapper: @zxing/browser has an undeclared runtime
+     dependency on @zxing/library that isn't satisfied by loading it alone
+     (see zxing-js/browser issue #55 — "BrowserMultiFormatReader ... just
+     stops working", no error, exactly the silent-no-op failure mode this
+     app can't afford). @zxing/library's own UMD build is self-contained and
+     exposes BrowserMultiFormatReader plus BarcodeFormat/DecodeHintType
+     (needed to explicitly request 1D formats — without hints, 1D decoding
+     has multiple confirmed reports of silently never firing) on one global,
+     ZXing. Still loaded defensively — see initBarcodeReader() — so if this
      script fails to load for any reason, barcode detection just silently
      stays off; QR scanning is completely unaffected either way. -->
 <script src="https://unpkg.com/@zxing/[email protected]"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<!-- QR-code GENERATION (distinct from the ZXing/qr-scanner DECODING libraries
+     above) — used only for the rep's own "share my card" QR (backlog #8).
+     davidshimjs/qrcodejs: dependency-free, canvas-based, global `QRCode`.
+     Pinned to its one stable cdnjs release. Loaded defensively same as the
+     barcode reader — see showMyCardModal() — so a blocked CDN just disables
+     that one feature rather than breaking anything else. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
@@ -223,6 +236,15 @@
   #view-setup .card p{font-size:calc(13px * var(--text-scale));color:var(--ink-soft);line-height:1.5;margin:0 0 10px;}
   #view-setup ol{font-size:13px;color:var(--ink-soft);line-height:1.6;padding-left:20px;margin:0 0 10px;}
   #setupGate{position:fixed;inset:0;background:var(--bg);z-index:300;overflow-y:auto;display:none;padding:20px 16px calc(20px + env(safe-area-inset-bottom));}
+  .lock-overlay{background:var(--navy-pale);border:1px dashed var(--navy-light);border-radius:var(--radius);padding:18px;text-align:center;color:var(--navy);margin-bottom:14px;}
+  #connectionGatedArea.locked{display:none;}
+  .mesh-row{border-top:1px solid var(--border);padding:10px 0;} .mesh-row:first-child{border-top:none;padding-top:0;}
+  #view-readout{max-width:680px;margin:0 auto;}
+  #readoutBody{white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:var(--ink);}
+  @media print{
+    #topbar, #tabbar, .toast, #btnReadoutBack, #btnReadoutCopy, #btnReadoutPrint{display:none !important;}
+    #app{padding:0;} .view{display:none !important;} #view-readout{display:block !important;}
+  }
 </style>
 </head>
 <body>
@@ -267,6 +289,7 @@
       <button class="btn btn-outline grow" id="btnToggleCam">Stop camera</button>
       <button class="btn btn-dark grow" id="btnTakePhoto">No QR — take photo</button>
     </div>
+    <button class="btn btn-teal btn-block" id="btnShowMyCard" style="margin-top:10px;"><span aria-hidden="true">📇</span> My card — show to attendee</button>
     <input type="file" id="photoInput" accept="image/*" capture="environment">
     <div class="hint" style="margin-top:10px;text-align:center;" id="syncHint">
       Live sync assumes solid venue wifi. Leads save instantly and sync to the whole team within a second or two.
@@ -318,6 +341,7 @@
     <h2 class="section-title">Team activity</h2>
     <div class="card" id="teamAnalyticsWrap" style="margin-bottom:8px;"></div>
     <button class="btn btn-outline btn-block" id="btnOpenAnalytics" style="margin-bottom:14px;"><span aria-hidden="true">📊</span> View full analytics</button>
+    <button class="btn btn-outline btn-block" id="btnGenReadout" style="margin-bottom:14px;"><span aria-hidden="true">📝</span> Generate event readout</button>
     <div class="row" style="margin-bottom:14px;align-items:center;">
       <button class="btn btn-outline grow" id="btnPickWinner"><span aria-hidden="true">🎉</span> Pick a prize winner</button>
     </div>
@@ -338,6 +362,18 @@
     <div class="card" id="analyticsSoftwareWrap" style="margin-bottom:16px;"></div>
     <h2 class="section-title">Leads by rep</h2>
     <div class="card" id="analyticsRepWrap"></div>
+    <h2 class="section-title">Leads by company</h2>
+    <div class="hint" style="margin-bottom:12px;">Meshes company together with what they said — not just separate topic tallies. Top 10 companies by lead count.</div>
+    <div class="card" id="analyticsCompanyWrap"></div>
+  </div>
+
+  <div class="view" id="view-readout">
+    <div class="row between" style="margin-bottom:6px;">
+      <button class="btn-icon btn-outline" id="btnReadoutBack" onclick="switchTab('leads')" aria-label="Back"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 19l-7-7 7-7"/></svg></button>
+      <div style="font-weight:700;font-size:15px;">Event readout</div>
+      <div style="width:44px;"></div>
+    </div>
+    <div id="readoutContent"></div>
   </div>
 
   <div class="view" id="view-attendees">
@@ -366,6 +402,9 @@
 
   <div class="view" id="view-events">
     <h2 class="section-title">Events</h2>
+    <div class="card" style="padding:10px 12px;margin-bottom:10px;">
+      <input type="text" id="eventSearchInput" placeholder="Search all events, including archived…" aria-label="Search events, including archived">
+    </div>
     <div id="eventsListWrap"></div>
     <div class="card">
       <div class="field"><label class="field-label" for="newEventName">New event name</label><input type="text" id="newEventName" placeholder="APPA 2026 Annual Conference"></div>
@@ -387,7 +426,15 @@
       <input type="range" id="textScaleSlider" min="100" max="160" step="5">
       <div class="hint" id="textLgHint" style="margin-top:8px;">Scales text on lead entry, lists, and forms across the app — drag to whatever's comfortable to read. Defaults larger for easier reading at a booth. Leaves the tab bar, event pill, and badges alone so nothing overflows.</div>
     </div>
+    <h2 class="section-title">Security</h2>
+    <div class="card" id="securityCardWrap"></div>
     <h2 class="section-title">Connection</h2>
+    <div id="connectionGateOverlay" class="lock-overlay" style="display:none;">
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:26px;height:26px;"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+      <div style="font-weight:700;margin:6px 0 2px;">Connection settings are locked</div>
+      <div class="hint" style="margin-bottom:10px;">Enter the PIN above under Security to edit these.</div>
+    </div>
+    <div id="connectionGatedArea">
     <div class="card">
       <p>Compass Leads stores everything in a Firestore database (Google's free-tier cloud database) so up to ~10 phones can read and write the same leads live. Paste your Firebase project config below — see the README that came with this app for the one-time project setup steps.</p>
       <div class="field"><label class="field-label" for="setupFirebaseConfig">Firebase config (paste the whole object)</label>
@@ -432,6 +479,16 @@
       <p style="margin-top:10px;">⚠️ This link contains your Firebase config and API key in plain sight (in
       the URL). Send it somewhere private — a direct message, not a public channel — and treat it like a
       password. Anyone with the link can read/write your leads and spend against your API key.</p>
+    </div>
+    </div>
+    <h2 class="section-title">Your contact card</h2>
+    <div class="card">
+      <p>Fills in the QR code you can show attendees under "📇 My card" on the Scan tab — a two-way exchange: you scan theirs into a lead, then hand your own info back the same way. Your name comes from "Signed in as" on the Scan tab.</p>
+      <div class="field"><label class="field-label" for="setupRepTitle">Your title</label><input type="text" id="setupRepTitle" placeholder="Solutions Engineer"></div>
+      <div class="field"><label class="field-label" for="setupRepCompany">Company</label><input type="text" id="setupRepCompany" placeholder="Catalis" value="Catalis"></div>
+      <div class="field"><label class="field-label" for="setupRepEmail">Your email</label><input type="email" id="setupRepEmail" placeholder="you@catalis.com"></div>
+      <div class="field"><label class="field-label" for="setupRepPhone">Your phone</label><input type="tel" id="setupRepPhone" placeholder="(555) 555-0100"></div>
+      <button class="btn btn-outline btn-block" id="btnSaveRepCard">Save my card</button>
     </div>
     <div class="card" style="font-size:12px;color:var(--ink-soft);text-align:center;">
       Compass Leads <span id="setupVersionLine"></span> · <a href="README.md" target="_blank" rel="noopener" style="color:var(--teal);">View README</a>
@@ -516,7 +573,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.11.2'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.12.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -527,6 +584,9 @@ const LS_ACTIVE_EVENT = 'compassleads.activeEventId'; // per-device: which event
 const LS_TEXT_SCALE = 'compassleads.textScale'; // per-device: text-size preference, percent (100 = normal); defaults larger
 const LS_ATTENDEE_SORT = 'compassleads.attendeeSort'; // per-device: remembered attendee-table sort column + direction
 const LS_ATTENDEE_COLWIDTHS = 'compassleads.attendeeColWidths'; // per-device: remembered attendee-table column widths (px), keyed by column key
+const LS_SETUP_LOCK_HASH = 'compassleads.setupLockHash'; // per-device: SHA-256 hex of a PIN/password gating the Connection + API-key cards (see renderSecurityCard) — never the plaintext
+const LS_REP_CARD = 'compassleads.repCard'; // per-device: the rep's own title/company/email/phone for the "share my card" QR (backlog #8)
+const LS_EVENT_SEARCH = 'compassleads.eventSearchLastQuery'; // per-device: last text typed in the Events-tab search, restored so switching tabs doesn't lose it
 
 /* ---------- Help (Medium tier: dedicated Help section + inline "?" tips) ---------- */
 const HELP_TOPICS = {
@@ -646,6 +706,16 @@ function applyTextScale(percent){
 
 function uid(){ return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Every localStorage value this app reads back with JSON.parse goes through
+// here instead of a bare JSON.parse — a value that's been hand-edited,
+// truncated by a storage-quota hiccup, or left over from a much older
+// version can otherwise throw at the top of the script, before anything on
+// screen has a chance to render, taking the whole app down to a blank page
+// over one bad key.
+function safeJSONParse(raw, fallback){
+  if(raw == null) return fallback;
+  try{ return JSON.parse(raw); }catch(e){ console.error('Corrupted localStorage value, ignoring:', e); return fallback; }
+}
 function norm(s){ return (s||'').toLowerCase().normalize('NFKD').replace(/[^\w\s]/g,'').replace(/\s+/g,' ').trim(); }
 // Digits-only phone comparison, last 10 (drops a leading country code like
 // +1 so "+1 555-123-4567" and "555.123.4567" match) — used for cross-event
@@ -676,8 +746,8 @@ const State = {
   events: [],
   activeEventId: localStorage.getItem(LS_ACTIVE_EVENT) || null, // per-device: sticks until this rep changes it
   attendees: [],
-  attendeeSort: JSON.parse(localStorage.getItem(LS_ATTENDEE_SORT) || 'null') || {key:null, dir:'asc'}, // per-device: remembered attendee-table sort
-  attendeeColWidths: JSON.parse(localStorage.getItem(LS_ATTENDEE_COLWIDTHS) || 'null') || {}, // per-device: remembered attendee-table column widths
+  attendeeSort: safeJSONParse(localStorage.getItem(LS_ATTENDEE_SORT), null) || {key:null, dir:'asc'}, // per-device: remembered attendee-table sort
+  attendeeColWidths: safeJSONParse(localStorage.getItem(LS_ATTENDEE_COLWIDTHS), null) || {}, // per-device: remembered attendee-table column widths
   attendeeColumns: [{key:'firstName',label:'First Name'},{key:'lastName',label:'Last Name'},{key:'company',label:'Company'},{key:'email',label:'Email'},{key:'phone',label:'Phone'}],
   competitors: [],
   engagementReasons: [],
@@ -692,6 +762,9 @@ const State = {
   unsubCompetitors: null,
   unsubEngagementReasons: null,
   pendingLead: null,
+  setupUnlocked: false, // session-only (not persisted) — see renderSecurityCard(); a fresh page load always re-locks if a PIN is set
+  repCard: safeJSONParse(localStorage.getItem(LS_REP_CARD), null) || {title:'', company:'', email:'', phone:''}, // the rep's own card fields for "share my card" (backlog #8) — name comes from workerName
+  showArchivedEvents: false, // per-tab-open UI toggle (not persisted) — see renderEventsList()
 };
 
 /* ---------- competitors / current-software list (global, shared across all events) ---------- */
@@ -849,12 +922,91 @@ function switchViewOnly(name){
 }
 
 /* ---------- Firebase bootstrap ---------- */
+// SHA-256 of the PIN, never the plaintext — see LS_SETUP_LOCK_HASH. This is a
+// lightweight deterrent against an accidental tap-and-edit at a shared booth
+// device, not real access control: anyone with the file itself can read this
+// same source, and a client-side check can always be bypassed by someone who
+// opens dev tools. Said plainly in the Security card's own copy below rather
+// than implied.
+async function sha256Hex(str){
+  if(!window.crypto || !window.crypto.subtle) throw new Error('crypto.subtle unavailable (requires HTTPS)');
+  const bytes = new TextEncoder().encode(str);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+function applyConnectionGateVisibility(){
+  const hash = localStorage.getItem(LS_SETUP_LOCK_HASH);
+  const locked = !!hash && !State.setupUnlocked;
+  document.getElementById('connectionGatedArea').classList.toggle('locked', locked);
+  document.getElementById('connectionGateOverlay').style.display = locked ? 'block' : 'none';
+}
+function renderSecurityCard(){
+  const wrap = document.getElementById('securityCardWrap');
+  if(!wrap) return;
+  const hash = localStorage.getItem(LS_SETUP_LOCK_HASH);
+  if(!hash){
+    wrap.innerHTML = `
+      <p style="margin:0 0 10px;font-size:13px;color:var(--ink-soft);line-height:1.5;">Optional: set a PIN to keep the Firebase config and API key below from being changed by accident at a shared booth device. This is a light deterrent, not real security — anyone with dev tools can bypass it, and it does nothing to protect the actual Firebase/API credentials themselves. The competitor and reason lists stay open to everyone either way.</p>
+      <div class="field"><label class="field-label" for="setupLockPin1">Set a PIN</label><input type="password" id="setupLockPin1" placeholder="4+ characters" autocomplete="new-password"></div>
+      <button class="btn btn-outline btn-block" id="btnSetSetupLock">Set PIN</button>`;
+    document.getElementById('btnSetSetupLock').onclick = async () => {
+      const v = document.getElementById('setupLockPin1').value;
+      if(v.length < 4){ toast('PIN needs at least 4 characters'); return; }
+      try{
+        localStorage.setItem(LS_SETUP_LOCK_HASH, await sha256Hex(v));
+      }catch(e){ console.error(e); toast('Could not set a PIN in this browser (needs HTTPS)'); return; }
+      State.setupUnlocked = true; // whoever just set it stays unlocked this session
+      toast('PIN set — connection settings are now locked for anyone else');
+      renderSecurityCard(); applyConnectionGateVisibility();
+    };
+  } else if(!State.setupUnlocked){
+    wrap.innerHTML = `
+      <div style="font-weight:700;margin-bottom:6px;">🔒 Connection settings are locked</div>
+      <div class="field"><label class="field-label" for="setupLockUnlockInput">Enter PIN</label><input type="password" id="setupLockUnlockInput" placeholder="PIN" autocomplete="current-password"></div>
+      <button class="btn btn-primary btn-block" id="btnUnlockSetup">Unlock</button>
+      <div class="hint" id="setupLockErr" style="margin-top:6px;color:var(--red);"></div>`;
+    const doUnlock = async () => {
+      const v = document.getElementById('setupLockUnlockInput').value;
+      let ok = false;
+      try{ ok = v && (await sha256Hex(v)) === hash; }
+      catch(e){ console.error(e); toast('Could not verify the PIN in this browser (needs HTTPS)'); return; }
+      if(!ok){ document.getElementById('setupLockErr').textContent = 'Wrong PIN.'; return; }
+      State.setupUnlocked = true;
+      toast('Unlocked for this session');
+      renderSecurityCard(); applyConnectionGateVisibility(); prefillSetupView();
+    };
+    document.getElementById('btnUnlockSetup').onclick = doUnlock;
+    document.getElementById('setupLockUnlockInput').addEventListener('keydown', e => { if(e.key==='Enter') doUnlock(); });
+  } else {
+    wrap.innerHTML = `
+      <div style="font-weight:700;margin-bottom:6px;color:var(--teal);">🔓 Unlocked for this session</div>
+      <div class="hint" style="margin-bottom:10px;">Locks again automatically next time this app is opened.</div>
+      <div class="row">
+        <button class="btn btn-outline grow btn-sm" id="btnLockSetupNow">Lock now</button>
+        <button class="btn btn-danger grow btn-sm" id="btnRemoveSetupLock">Remove PIN</button>
+      </div>`;
+    document.getElementById('btnLockSetupNow').onclick = () => { State.setupUnlocked = false; renderSecurityCard(); applyConnectionGateVisibility(); };
+    document.getElementById('btnRemoveSetupLock').onclick = () => {
+      if(!confirm('Remove the PIN? Connection settings will be open to anyone with this tab from now on.')) return;
+      localStorage.removeItem(LS_SETUP_LOCK_HASH);
+      State.setupUnlocked = false;
+      renderSecurityCard(); applyConnectionGateVisibility();
+      toast('PIN removed');
+    };
+  }
+}
 function prefillSetupView(){
+  renderSecurityCard();
+  applyConnectionGateVisibility();
   const cfg = localStorage.getItem(LS_FIREBASE);
   if(cfg) document.getElementById('setupFirebaseConfig').value = cfg;
   const key = localStorage.getItem(LS_APIKEY);
   document.getElementById('firebaseStatusLine').textContent = State.db ? 'Connected.' : 'Not connected.';
   if(key) document.getElementById('setupApiKey').placeholder = '•••••••••••••••• (saved — paste to replace)';
+  document.getElementById('setupRepTitle').value = State.repCard.title || '';
+  document.getElementById('setupRepCompany').value = State.repCard.company || 'Catalis';
+  document.getElementById('setupRepEmail').value = State.repCard.email || '';
+  document.getElementById('setupRepPhone').value = State.repCard.phone || '';
 }
 function parseFirebaseConfigInput(raw){
   raw = raw.trim();
@@ -949,6 +1101,17 @@ document.getElementById('btnSaveApiKey').onclick = () => {
   document.getElementById('setupApiKey').value = '';
   prefillSetupView();
 };
+document.getElementById('btnSaveRepCard').onclick = () => {
+  const card = {
+    title: document.getElementById('setupRepTitle').value.trim(),
+    company: document.getElementById('setupRepCompany').value.trim(),
+    email: document.getElementById('setupRepEmail').value.trim(),
+    phone: document.getElementById('setupRepPhone').value.trim(),
+  };
+  State.repCard = card;
+  localStorage.setItem(LS_REP_CARD, JSON.stringify(card));
+  toast('Your card is saved — see "📇 My card" on the Scan tab');
+};
 
 /* ---------- one-tap setup link for reps ---------- */
 // Packs the Firebase config + (optional) API key into the URL's hash fragment.
@@ -958,7 +1121,9 @@ document.getElementById('btnSaveApiKey').onclick = () => {
 document.getElementById('btnGenSetupLink').onclick = () => {
   const cfg = localStorage.getItem(LS_FIREBASE);
   if(!cfg){ toast('Connect Firebase first, then generate the link'); return; }
-  const payload = { fb: JSON.parse(cfg), key: localStorage.getItem(LS_APIKEY) || '' };
+  const parsedCfg = safeJSONParse(cfg, null);
+  if(!parsedCfg){ toast('Saved Firebase config looks corrupted — reconnect under Connection first'); return; }
+  const payload = { fb: parsedCfg, key: localStorage.getItem(LS_APIKEY) || '' };
   const encoded = btoa(encodeURIComponent(JSON.stringify(payload)));
   const base = location.origin + location.pathname;
   const link = base + '#setup=' + encoded;
@@ -1044,15 +1209,58 @@ function renderEventsList(){
     wrap.innerHTML = `<div class="empty-state"><b>No events yet</b>Add one below — e.g. "APPA 2026" — then everything scanned this week ties to it.</div>`;
     return;
   }
-  wrap.innerHTML = State.events.map(ev => `
-    <div class="card row between">
-      <div><div style="font-weight:700;">${esc(ev.name)}</div><div class="hint">Created ${fmtTime(ev.createdAt)}</div></div>
-      <div class="row">
-        ${ev.id===State.activeEventId ? `<span class="badge badge-teal">Active</span>` : `<button class="btn btn-outline btn-sm" onclick="setActiveEvent('${ev.id}')">Make active</button>`}
+  const query = norm(document.getElementById('eventSearchInput').value || '');
+  const matches = (ev) => !query || norm(ev.name).includes(query);
+  const active = State.events.filter(ev => !ev.archived && matches(ev));
+  const archived = State.events.filter(ev => ev.archived && matches(ev));
+  const rowHtml = (ev) => `
+    <div class="card row between wrap">
+      <div style="min-width:0;flex:1 1 180px;"><div style="font-weight:700;word-break:break-word;">${esc(ev.name)}</div><div class="hint">Created ${fmtTime(ev.createdAt)}${ev.archived ? ' · Archived' : ''}</div></div>
+      <div class="row wrap" style="justify-content:flex-end;">
+        ${ev.archived
+          ? `<button class="btn btn-outline btn-sm" onclick="unarchiveEvent('${ev.id}')">Unarchive</button>`
+          : (ev.id===State.activeEventId ? `<span class="badge badge-teal">Active</span>` : `<button class="btn btn-outline btn-sm" onclick="setActiveEvent('${ev.id}')">Make active</button>`)}
         <button class="btn btn-outline btn-sm" onclick="renameEvent('${ev.id}')" aria-label="Rename event">Rename</button>
+        ${!ev.archived ? `<button class="btn btn-outline btn-sm" onclick="archiveEvent('${ev.id}')">Archive</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="deleteEvent('${ev.id}')">Delete</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  let html = '';
+  if(!active.length && !archived.length){
+    html = `<div class="empty-state"><b>No matching events</b>Try a different search, or clear it to see everything.</div>`;
+  } else {
+    html = active.length ? active.map(rowHtml).join('') : `<p class="hint" style="margin:0 0 10px;">No active events${query?' match that search':''}.</p>`;
+    // Cross-event memory (see findCrossEventMatch) keeps every past event's
+    // leads permanently queryable — archiving here is purely a UI declutter,
+    // never a data change, so an archived event's leads stay just as
+    // findable as before. Collapsed by default so a long-running booth's
+    // event list doesn't grow forever; a search that matches an archived
+    // event expands it into view automatically rather than hiding the very
+    // thing being searched for.
+    const forceOpen = !!query && archived.length > 0;
+    const open = State.showArchivedEvents || forceOpen;
+    if(archived.length){
+      html += `<button type="button" class="help-row" style="margin-top:6px;" onclick="toggleArchivedEvents()" aria-expanded="${open}" aria-controls="archivedEventsWrap">
+        <span>Archived events (${archived.length})</span><span class="help-row-arrow">${open?'⌄':'›'}</span>
+      </button>
+      <div id="archivedEventsWrap" style="display:${open?'block':'none'};margin-top:8px;">${archived.map(rowHtml).join('')}</div>`;
+    }
+  }
+  wrap.innerHTML = html;
+}
+function toggleArchivedEvents(){ State.showArchivedEvents = !State.showArchivedEvents; renderEventsList(); }
+document.getElementById('eventSearchInput').addEventListener('input', renderEventsList);
+async function archiveEvent(id){
+  await State.db.collection('events').doc(id).set({archived: true}, {merge:true});
+  // Working inside an archived event unnoticed would be confusing — clear
+  // this device's active event rather than leave it pointed at something
+  // that just disappeared from the main list.
+  if(State.activeEventId === id) await setActiveEvent(null);
+  toast('Event archived — still fully searchable for cross-event matching');
+}
+async function unarchiveEvent(id){
+  await State.db.collection('events').doc(id).set({archived: false}, {merge:true});
+  toast('Event restored to the active list');
 }
 async function renameEvent(id){
   const ev = State.events.find(e => e.id === id);
@@ -1520,6 +1728,46 @@ function renderAnalyticsScreen(){
   leads.forEach(l => { const rep = l.scannedBy || 'Unknown'; byRep[rep] = (byRep[rep]||0) + 1; });
   const repData = Object.entries(byRep).map(([label,count]) => ({label,count})).sort((a,b) => b.count-a.count);
   renderBarsFromData('analyticsRepWrap', repData, 'var(--brass-dark)');
+
+  renderCompanyMesh(leads);
+}
+// Groups leads by company and, for each, surfaces its most common Reason for
+// Engagement and Current Software — the point being to answer "what does
+// Tyler Technologies specifically care about" rather than only ever seeing
+// reason/software tallied across every company at once (the two breakdowns
+// above this one). Leads with no company go under "(no company)" so they're
+// not silently dropped from the count.
+function renderCompanyMesh(leads){
+  const el = document.getElementById('analyticsCompanyWrap');
+  if(!el) return;
+  if(!leads.length){ el.innerHTML = `<p class="hint" style="margin:0;">No data yet.</p>`; return; }
+  const byCompany = {};
+  leads.forEach(l => {
+    const company = (l.company||'').trim() || '(no company)';
+    if(!byCompany[company]) byCompany[company] = {count:0, reasons:{}, software:{}};
+    const bucket = byCompany[company];
+    bucket.count++;
+    const reason = l.reasonForEngagement || 'Not specified';
+    const software = l.currentSoftware || 'Not asked / not mentioned';
+    bucket.reasons[reason] = (bucket.reasons[reason]||0) + 1;
+    bucket.software[software] = (bucket.software[software]||0) + 1;
+  });
+  const topEntry = (obj) => Object.entries(obj).sort((a,b) => b[1]-a[1])[0];
+  const rows = Object.entries(byCompany)
+    .sort((a,b) => b[1].count - a[1].count)
+    .slice(0, 10)
+    .map(([company, bucket]) => {
+      const topReason = topEntry(bucket.reasons);
+      const topSoftware = topEntry(bucket.software);
+      return `<div class="mesh-row">
+        <div class="row between wrap" style="margin-bottom:3px;">
+          <b style="min-width:0;word-break:break-word;">${esc(company)}</b>
+          <span class="badge badge-brass" style="flex-shrink:0;">${bucket.count} lead${bucket.count===1?'':'s'}</span>
+        </div>
+        <div class="hint">Top reason: ${esc(topReason[0])} (${topReason[1]}) &nbsp;·&nbsp; Top software: ${esc(topSoftware[0])} (${topSoftware[1]})</div>
+      </div>`;
+    }).join('');
+  el.innerHTML = rows;
 }
 function renderBarBreakdown(containerId, leads, field, color, emptyLabel){
   const counts = {};
@@ -1548,6 +1796,118 @@ function renderBarsFromData(containerId, data, color){
     </div>`).join('');
 }
 document.getElementById('btnOpenAnalytics').onclick = openAnalyticsScreen;
+
+/* ---------- executive event readout (backlog #11) ---------- */
+document.getElementById('btnGenReadout').onclick = openReadoutScreen;
+function openReadoutScreen(){
+  if(!localStorage.getItem(LS_APIKEY)){
+    toast('Add an Anthropic API key under Setup first — this feature needs it');
+    return;
+  }
+  const leads = allLeadsSorted();
+  if(!leads.length){ toast('No leads yet for this event'); return; }
+  switchViewOnly('readout');
+  const content = document.getElementById('readoutContent');
+  content.innerHTML = `<div class="card" style="text-align:center;padding:30px 16px;">
+    <svg aria-hidden="true" focusable="false" class="spin" style="width:30px;height:30px;color:var(--teal);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-opacity=".3"/><path d="M21 12a9 9 0 00-9-9"/></svg>
+    <div class="hint" style="margin-top:10px;">Writing the readout…</div>
+  </div>`;
+  generateReadout(leads).then(text => renderReadoutSuccess(text)).catch(err => {
+    console.error(err);
+    renderReadoutError();
+  });
+}
+function buildReadoutPrompt(leads){
+  const evName = (State.events.find(e=>e.id===State.activeEventId)||{}).name || 'this event';
+  const byCompany = {};
+  const byReason = {}; const bySoftware = {};
+  leads.forEach(l => {
+    const company = (l.company||'').trim() || '(no company)';
+    byCompany[company] = (byCompany[company]||0) + 1;
+    const reason = l.reasonForEngagement || 'Not specified';
+    byReason[reason] = (byReason[reason]||0) + 1;
+    const sw = l.currentSoftware || 'Not asked / not mentioned';
+    bySoftware[sw] = (bySoftware[sw]||0) + 1;
+  });
+  const topCompanies = Object.entries(byCompany).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  // Notable notes only — an exec readout benefits from real color, but there's
+  // no reason to ship every lead's full contact info to the API for this, so
+  // only name/company/note/reason go along, and only for leads that actually
+  // have a note (capped so a huge event doesn't blow past a reasonable request size).
+  const notable = leads.filter(l => l.notes && l.notes.trim()).slice(0, 40)
+    .map(l => `- ${l.name||'(no name)'}${l.company?' ('+l.company+')':''}: "${l.notes.trim()}"${l.reasonForEngagement?' [reason: '+l.reasonForEngagement+']':''}`);
+  return `You are helping a government-technology sales team (Catalis) write a one-page executive readout of a conference booth's lead-capture results, for internal leadership who did not attend. Be concise, factual, and specific — pull out real patterns and named companies/agencies, don't pad with generic filler. Plain text only: no markdown syntax (no #, *, or **), just clear section headings in plain capital letters or title case followed by a blank line, since this will be displayed as-is without a markdown renderer.
+
+Event: ${evName}
+Total leads captured: ${leads.length}
+
+Top companies/agencies by lead count:
+${topCompanies.map(([c,n]) => `- ${c}: ${n}`).join('\n')}
+
+Reason for engagement breakdown:
+${Object.entries(byReason).sort((a,b)=>b[1]-a[1]).map(([r,n]) => `- ${r}: ${n}`).join('\n')}
+
+Current software mentioned:
+${Object.entries(bySoftware).sort((a,b)=>b[1]-a[1]).map(([s,n]) => `- ${s}: ${n}`).join('\n')}
+
+Notable rep notes captured on individual leads:
+${notable.length ? notable.join('\n') : '(none captured)'}
+
+Write the readout with these sections: OVERVIEW (2-3 sentences), KEY TAKEAWAYS (3-5 bullet-style lines using a leading dash, not asterisks), NOTABLE CONVERSATIONS (pull from the rep notes above where there's real substance), COMPETITIVE SIGNALS (what current software came up and what it suggests), RECOMMENDED FOLLOW-UPS (concrete, named where possible). Keep the whole thing to roughly 300-450 words.`;
+}
+async function generateReadout(leads){
+  const apiKey = localStorage.getItem(LS_APIKEY);
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type':'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1200,
+      messages: [{ role:'user', content: buildReadoutPrompt(leads) }]
+    })
+  });
+  if(!resp.ok){
+    const errText = await resp.text().catch(()=> '');
+    throw new Error('API error ' + resp.status + ' ' + errText.slice(0,200));
+  }
+  const data = await resp.json();
+  const textBlock = (data.content || []).find(b => b.type === 'text');
+  if(!textBlock || !textBlock.text) throw new Error('No text in response');
+  return textBlock.text.trim();
+}
+function renderReadoutSuccess(text){
+  const evName = (State.events.find(e=>e.id===State.activeEventId)||{}).name || 'Event';
+  const content = document.getElementById('readoutContent');
+  content.innerHTML = `
+    <div class="card" style="margin-bottom:12px;">
+      <h2 style="margin:0 0 4px;color:var(--navy);">${esc(evName)} — Readout</h2>
+      <div class="hint" style="margin-bottom:14px;">AI-drafted from this event's leads — review before sharing. Generated ${fmtTime(Date.now())}.</div>
+      <div id="readoutBody">${esc(text)}</div>
+    </div>
+    <div class="row wrap" style="margin-bottom:10px;">
+      <button class="btn btn-outline grow" id="btnReadoutCopy">Copy text</button>
+      <button class="btn btn-teal grow" id="btnReadoutPrint">Print / Save PDF</button>
+    </div>
+    <button class="btn btn-outline btn-block" onclick="switchTab('leads')">Back to leads</button>`;
+  document.getElementById('btnReadoutCopy').onclick = async () => {
+    try{ await navigator.clipboard.writeText(text); toast('Copied'); }
+    catch(e){ toast('Could not copy — select the text manually'); }
+  };
+  document.getElementById('btnReadoutPrint').onclick = () => window.print();
+}
+function renderReadoutError(){
+  document.getElementById('readoutContent').innerHTML = `
+    <div class="alert-box">
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="#7A2C1C" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+      <div>Could not generate the readout — check the API key under Setup and your connection, then try again.</div>
+    </div>
+    <button class="btn btn-outline btn-block" onclick="switchTab('leads')">Back to leads</button>`;
+}
 function pickPrizeWinner(){
   const leads = allLeadsSorted();
   if(!leads.length){ toast('No leads to pick from yet'); return; }
@@ -1569,6 +1929,59 @@ function pickPrizeWinner(){
 }
 document.getElementById('btnPickWinner').onclick = pickPrizeWinner;
 document.getElementById('leadSearch').addEventListener('input', renderLeadsList);
+
+/* ---------- two-way card exchange: rep's own QR (backlog #8) ---------- */
+// Sequential, not simultaneous, by design: iOS Safari has no Web NFC write
+// support (see README → Known limitations), so a "tap phones together" real
+// NFC exchange isn't possible cross-platform here. This is the practical
+// substitute — the rep already scanned the attendee's badge into a lead;
+// this hands their own info back the same visual way, one direction at a
+// time, which works identically on iOS and Android with zero extra hardware.
+function buildRepVCard(){
+  // vCard 3.0 requires backslash-escaping , ; and \ within a field value, and
+  // a literal newline has to become the two-character sequence \n rather than
+  // an actual line break (which would otherwise start a new, malformed vCard
+  // line) — a text <input> can't contain a newline itself, but a pasted value
+  // sometimes carries one anyway, so this covers it defensively either way.
+  const vEsc = (s) => (s||'').replace(/\\/g,'\\\\').replace(/,/g,'\\,').replace(/;/g,'\\;').replace(/\r?\n/g,'\\n');
+  const name = vEsc((State.workerName || '').trim());
+  const c = State.repCard || {};
+  const lines = ['BEGIN:VCARD','VERSION:3.0'];
+  if(name) lines.push('N:;' + name + ';;;', 'FN:' + name);
+  if(c.title) lines.push('TITLE:' + vEsc(c.title));
+  if(c.company) lines.push('ORG:' + vEsc(c.company));
+  if(c.email) lines.push('EMAIL:' + vEsc(c.email));
+  if(c.phone) lines.push('TEL:' + vEsc(c.phone));
+  lines.push('END:VCARD');
+  return lines.join('\n');
+}
+function showMyCardModal(){
+  const name = (State.workerName || '').trim();
+  const c = State.repCard || {};
+  if(!name){ toast('Set your name first — tap "change" under Signed in as'); return; }
+  if(!c.email && !c.phone){ toast('Add at least an email or phone under Setup → Your contact card first'); return; }
+  const box = document.createElement('div');
+  box.className = 'modal-backdrop';
+  box.innerHTML = `
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="myCardHeading">
+      <h3 id="myCardHeading">${esc(name)}</h3>
+      <div class="hint" style="margin-bottom:2px;">${esc(c.title)||''}${c.title && c.company ? ' · ' : ''}${esc(c.company)||''}</div>
+      <div id="myCardQrWrap" style="display:flex;justify-content:center;margin:14px 0;min-height:220px;align-items:center;"></div>
+      <div class="hint" style="margin-bottom:16px;">Have them scan this with any phone camera to save your contact info.</div>
+      <button class="btn btn-primary btn-block" id="btnCloseMyCard">Done</button>
+    </div>`;
+  document.body.appendChild(box);
+  box.querySelector('#btnCloseMyCard').onclick = () => box.remove();
+  const qrWrap = box.querySelector('#myCardQrWrap');
+  try{
+    if(typeof QRCode !== 'function') throw new Error('QRCode library unavailable');
+    new QRCode(qrWrap, { text: buildRepVCard(), width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+  }catch(e){
+    console.error('QR generation unavailable, falling back to plain text:', e);
+    qrWrap.innerHTML = `<div class="hint">QR code unavailable (offline?) — share this instead:<br><b>${esc(name)}</b><br>${esc(c.email)||''}${c.email&&c.phone?' · ':''}${esc(c.phone)||''}</div>`;
+  }
+}
+document.getElementById('btnShowMyCard').onclick = showMyCardModal;
 
 function editLead(key){ const lead = State.leads[key]; if(lead) openReview(lead, key); }
 async function deleteLead(key){
@@ -1685,10 +2098,25 @@ function initBarcodeReader(){
   if(barcodeReaderTried) return barcodeReader;
   barcodeReaderTried = true;
   try{
-    const Ctor = (window.ZXingBrowser && window.ZXingBrowser.BrowserMultiFormatReader)
-      || (window.ZXing && window.ZXing.BrowserMultiFormatReader);
-    if(!Ctor || typeof Ctor !== 'function') return null;
-    const reader = new Ctor();
+    // Primary: @zxing/library's own global (see script tag comment above for
+    // why @zxing/browser's wrapper is deliberately avoided). Also checks the
+    // wrapper's global as a defensive fallback in case the CDN swap ever
+    // changes — costs nothing, and either shape gets validated below before use.
+    const NS = window.ZXing || window.ZXingBrowser;
+    if(!NS || typeof NS.BrowserMultiFormatReader !== 'function') return null;
+    let hints;
+    if(NS.DecodeHintType && NS.BarcodeFormat && NS.DecodeHintType.POSSIBLE_FORMATS){
+      // Explicit formats, not left to the reader's default — 1D formats have
+      // multiple confirmed reports of silently never being tried without this.
+      hints = new Map();
+      hints.set(NS.DecodeHintType.POSSIBLE_FORMATS, [
+        NS.BarcodeFormat.CODE_128, NS.BarcodeFormat.CODE_39, NS.BarcodeFormat.CODE_93,
+        NS.BarcodeFormat.EAN_13, NS.BarcodeFormat.EAN_8,
+        NS.BarcodeFormat.UPC_A, NS.BarcodeFormat.UPC_E,
+        NS.BarcodeFormat.ITF, NS.BarcodeFormat.CODABAR
+      ].filter(Boolean));
+    }
+    const reader = hints ? new NS.BrowserMultiFormatReader(hints) : new NS.BrowserMultiFormatReader();
     if(!reader || typeof reader.decodeOnceFromVideoElement !== 'function') return null;
     barcodeReader = reader;
   }catch(e){ console.error('Barcode reader unavailable, continuing QR-only:', e); barcodeReader = null; }
@@ -2220,7 +2648,16 @@ function boot(){
     document.getElementById('setupGate').style.display = 'block';
     return;
   }
-  const cfg = JSON.parse(savedCfg);
+  const cfg = safeJSONParse(savedCfg, null);
+  if(!cfg){
+    // Corrupted saved config — same treatment as "never connected": show the
+    // gate so the person can just paste it again, instead of the whole app
+    // silently never finishing boot() (an unhandled parse error here used to
+    // leave the page stuck exactly as it looked on first load, forever).
+    console.error('Saved Firebase config was corrupted — showing setup gate again.');
+    document.getElementById('setupGate').style.display = 'block';
+    return;
+  }
   const status = document.getElementById('gateStatusLine');
   if(await connectFirebase(cfg, status)) boot();
   else document.getElementById('setupGate').style.display = 'block';

@@ -574,7 +574,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.13.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.13.1'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -2262,15 +2262,49 @@ document.getElementById('btnTakePhoto').onclick = () => {
   }
   document.getElementById('photoInput').click();
 };
+// A phone camera photo is typically several MB straight off the sensor —
+// fine on good venue wifi, but on bad wifi/cellular that's the entire delay
+// a rep feels as "it's stuck." Badge and business-card text reads perfectly
+// well off a much smaller image, so every photo gets resized and
+// re-compressed client-side (near-instant, all on-device) before it's ever
+// sent over the network, rather than uploading the original untouched.
+function resizeImageForUpload(file, maxDim, quality){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+      if(width > maxDim || height > maxDim){
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Could not load image for resizing')); };
+    img.src = objectUrl;
+  });
+}
 document.getElementById('photoInput').addEventListener('change', async function(e){
   const file = e.target.files[0];
   e.target.value = '';
   if(!file) return;
-  const dataUrl = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }).catch(()=>null);
-  if(!dataUrl){ toast('Could not read that photo'); return; }
-  const base64 = dataUrl.split(',')[1];
-  const mediaType = file.type || 'image/jpeg';
   showScanOverlay('Reading badge…');
+  // Resizing can itself fail (corrupt file, unsupported format from some odd
+  // camera app) — fall back to the original file rather than losing the
+  // capture entirely; worst case the rep is back to the old slower upload,
+  // not a dead end.
+  const dataUrl = await resizeImageForUpload(file, 1400, 0.82).catch(async () => {
+    return await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }).catch(()=>null);
+  });
+  if(!dataUrl){ hideScanOverlay(); toast('Could not read that photo'); return; }
+  const base64 = dataUrl.split(',')[1];
+  const mediaType = dataUrl.startsWith('data:image/jpeg') ? 'image/jpeg' : (file.type || 'image/jpeg');
   try{
     const extracted = await extractBadgeFields(base64, mediaType);
     hideScanOverlay();

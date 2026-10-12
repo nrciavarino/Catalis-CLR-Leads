@@ -282,6 +282,15 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.13.1**
+  - Fixed: "No QR — take photo" was uploading the raw, full-resolution camera photo (typically
+    several MB) to the Anthropic API with no resizing or compression. On good venue wifi this was
+    barely noticeable; on bad wifi/cellular it was the entire 15-20+ second wait reps were
+    reporting as "stuck." Photos are now resized client-side (canvas, capped at 1400px on the
+    long edge, JPEG quality 0.82) before upload — a 6MB test photo came out to roughly 140KB, a
+    ~97% reduction, with no meaningful loss in OCR accuracy for badge/card text. Falls back to
+    the original uncompressed file if resizing itself fails for any reason (corrupt file, unusual
+    format), so a capture is never lost over this.
 - **v1.13.0**
   - Added: "🎯 Submit a MIC opportunity" button on the Scan tab, linking directly to the team's
     existing Microsoft Forms/SharePoint MIC submission form. Reps already submit MIC items that

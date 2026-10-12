@@ -282,6 +282,22 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.13.3** — proactive UX pass (same failure class as v1.13.2, found by re-checking the rest of
+  the app for the same patterns rather than waiting to hear about them from the field)
+  - Fixed: Setup \u2192 "Your contact card" had the exact placeholder-vs-real-data ambiguity v1.13.2
+    fixed on the lead-edit screen, just never updated there \u2014 a rep who saved only their title
+    would see it sitting next to two placeholder hints with nothing to tell them apart. Blank
+    fields on an already-saved card now show nothing, same as a saved lead.
+  - Fixed: the placeholder colors introduced in v1.13.2 measured ~2.4:1 contrast against white
+    (and the missing-field pink) \u2014 below WCAG's 3:1 floor for legible text, risking illegible-
+    in-bright-booth-light irony for text whose job is to be read as a hint. Darkened both
+    (~3.5:1/4:1) while keeping them clearly lighter than real entered text (~15:1).
+  - Fixed: "📇 My card — show to attendee" wrapped to two lines with the icon floating oddly at
+    160% text scale \u2014 the app's own maximum, intended for booth readability. Shortened to
+    "📇 My card" (the modal itself still explains what it's for).
+  - Fixed: the attendee-table column resize handle had a 9px touch target, well under the ~44px
+    comfortable minimum, making it fiddly to grab by finger. Widened the invisible hit area to
+    22px without moving the visible divider line.
 - **v1.13.2**
   - Fixed: placeholder example text (e.g. "Jordan Rivera", "name@agency.gov") was barely
     distinguishable from real entered text at a glance — especially inside the Email/Phone fields'

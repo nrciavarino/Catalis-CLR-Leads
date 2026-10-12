@@ -127,8 +127,14 @@
      color alone is easy to lose (especially against the red-pale missing-
      field background below), so italics carries the distinction too, for
      anyone relying on contrast alone. */
-  ::placeholder{color:#9BA8B5;opacity:1;font-style:italic;}
-  .field.missing input::placeholder{color:#B98C86;}
+  /* #788B9E / #9C6760 chosen over a lighter gray that measured ~2.4:1
+     against white (and the missing-field pink) — below WCAG's 3:1 floor for
+     legible text, risking illegible-in-bright-booth-light irony for text
+     whose whole job is to be read as a hint. These land at ~3.5:1/4:1 —
+     still unmistakably lighter than real entered text (~15:1) but readable
+     outdoors or under harsh venue lighting. */
+  ::placeholder{color:#788B9E;opacity:1;font-style:italic;}
+  .field.missing input::placeholder{color:#9C6760;}
   textarea{resize:vertical;min-height:80px;font-family:inherit;}
   .field{margin-bottom:12px;} .field.missing input{border-color:var(--red);background:var(--red-pale);}
   .hint{font-size:calc(12px * var(--text-scale));color:var(--ink-soft);margin-top:4px;}
@@ -208,8 +214,12 @@
   /* Drag handle on the right edge of each resizable header — a wide, mostly
      invisible hit target (8px) so it's reachable on a touchscreen without
      spilling into the sort click area, which sits on the rest of the th. */
-  .col-resize-handle{position:absolute;top:0;right:-4px;width:9px;height:100%;cursor:col-resize;touch-action:none;z-index:6;}
-  .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:4px;width:1px;background:var(--border);}
+  /* Hit area widened from an earlier 9px (well under the ~44px comfortable
+     touch-target minimum, making it fiddly to grab by finger) to 22px — the
+     visible 1px line stays anchored at the same spot via the matching
+     ::after left offset below, only the invisible grab zone around it grew. */
+  .col-resize-handle{position:absolute;top:0;right:-11px;width:22px;height:100%;cursor:col-resize;touch-action:none;z-index:6;}
+  .col-resize-handle::after{content:'';position:absolute;top:0;bottom:0;left:10px;width:1px;background:var(--border);}
   .col-resize-handle:hover::after, .col-resize-handle:active::after{background:var(--teal);width:2px;}
   body.col-resizing{cursor:col-resize;user-select:none;-webkit-user-select:none;}
   @media (min-width:700px){
@@ -295,7 +305,7 @@
       <button class="btn btn-outline grow" id="btnToggleCam">Stop camera</button>
       <button class="btn btn-dark grow" id="btnTakePhoto">No QR — take photo</button>
     </div>
-    <button class="btn btn-teal btn-block" id="btnShowMyCard" style="margin-top:10px;"><span aria-hidden="true">📇</span> My card — show to attendee</button>
+    <button class="btn btn-teal btn-block" id="btnShowMyCard" style="margin-top:10px;"><span aria-hidden="true">📇</span> My card</button>
     <a class="btn btn-outline btn-block" style="margin-top:10px;text-decoration:none;" href="https://catalisgov.sharepoint.com/:l:/s/CL-SalesEngineer/JABAq61ONHExSKMLDOklMheLAQNnG-tiCKehy-uzkMsH33Q?nav=NzFmZjgzNTMtY2ZlMi00ODFlLWI2NDYtMjVkYmZiYmIzODVl" target="_blank" rel="noopener"><span aria-hidden="true">🎯</span> Submit a MIC opportunity</a>
     <input type="file" id="photoInput" accept="image/*" capture="environment">
     <div class="hint" style="margin-top:10px;text-align:center;" id="syncHint">
@@ -580,7 +590,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.13.2'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.13.3'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -1014,6 +1024,14 @@ function prefillSetupView(){
   document.getElementById('setupRepCompany').value = State.repCard.company || 'Catalis';
   document.getElementById('setupRepEmail').value = State.repCard.email || '';
   document.getElementById('setupRepPhone').value = State.repCard.phone || '';
+  // Same ambiguity the lead-edit screen had: once this card has been saved
+  // at least once, a blank field here is a real "nothing entered," not a
+  // sample — so the example hint only makes sense before that first save.
+  const repCardExists = localStorage.getItem(LS_REP_CARD) !== null;
+  const repCardPlaceholders = { setupRepTitle:'Solutions Engineer', setupRepEmail:'you@catalis.com', setupRepPhone:'(555) 555-0100' };
+  Object.entries(repCardPlaceholders).forEach(([id, text]) => {
+    document.getElementById(id).placeholder = repCardExists ? '' : text;
+  });
 }
 function parseFirebaseConfigInput(raw){
   raw = raw.trim();

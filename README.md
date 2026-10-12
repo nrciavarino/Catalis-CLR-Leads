@@ -282,6 +282,15 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.13.2**
+  - Fixed: placeholder example text (e.g. "Jordan Rivera", "name@agency.gov") was barely
+    distinguishable from real entered text at a glance — especially inside the Email/Phone fields'
+    red "missing contact info" highlight, which lightened the background enough to wash out the
+    default gray. Placeholder text is now a distinctly lighter gray AND italic, so it reads as a
+    sample on sight even for someone relying on contrast alone.
+  - Changed: that placeholder hint text only makes sense on a brand-new, not-yet-saved capture.
+    Editing an EXISTING saved lead now shows a truly blank field — no hint text — when a field has
+    no data, removing any ambiguity about whether something was actually entered.
 - **v1.13.1**
   - Fixed: "No QR — take photo" was uploading the raw, full-resolution camera photo (typically
     several MB) to the Anthropic API with no resizing or compression. On good venue wifi this was

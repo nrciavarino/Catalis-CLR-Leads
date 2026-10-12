@@ -123,6 +123,12 @@
   input[type=text],input[type=email],input[type=tel],input[type=password],input[type=date],textarea,select{
     width:100%;border:1.5px solid var(--border);border-radius:10px;padding:11px 12px;font-size:calc(15.5px * var(--text-scale));background:#fff;color:var(--ink);
   }
+  /* Placeholder example text needs to read as unmistakably NOT real data —
+     color alone is easy to lose (especially against the red-pale missing-
+     field background below), so italics carries the distinction too, for
+     anyone relying on contrast alone. */
+  ::placeholder{color:#9BA8B5;opacity:1;font-style:italic;}
+  .field.missing input::placeholder{color:#B98C86;}
   textarea{resize:vertical;min-height:80px;font-family:inherit;}
   .field{margin-bottom:12px;} .field.missing input{border-color:var(--red);background:var(--red-pale);}
   .hint{font-size:calc(12px * var(--text-scale));color:var(--ink-soft);margin-top:4px;}
@@ -574,7 +580,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.13.1'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.13.2'; // bump this on every shipped change so it's obvious whether a device is up to date
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -2355,11 +2361,32 @@ async function extractBadgeFields(base64, mediaType){
   return { name: obj.name||'', company: obj.company||'', title: obj.title||'', email: obj.email||'', phone: obj.phone||'' };
 }
 
+// Example placeholder text ("Jordan Rivera", "name@agency.gov"...) is only
+// useful as a hint on a brand-new, not-yet-saved capture. On an EXISTING
+// saved lead, the same gray italic hint text in a blank field reads as
+// ambiguous — is that a sample, or did someone actually type "Jordan
+// Rivera"? So once a record exists, a blank field shows nothing at all
+// rather than a hint, and this is the one place in the app that distinction
+// matters enough to track. Captured once from the HTML so re-opening a new
+// (non-existing) lead afterward restores the real hints rather than leaving
+// them blank forever.
+const FIELD_PLACEHOLDERS = {
+  f_name: 'Jordan Rivera', f_company: 'County Probation Dept.', f_title: 'Program Director',
+  f_email: 'name@agency.gov', f_phone: '(555) 555-0100', f_notes: 'Interested in Benchmark integration…',
+};
+function setReviewPlaceholdersForExisting(isExisting){
+  Object.entries(FIELD_PLACEHOLDERS).forEach(([id, text]) => {
+    const el = document.getElementById(id);
+    if(el) el.placeholder = isExisting ? '' : text;
+  });
+}
+
 /* ---------- review / save flow ---------- */
 function openReview(lead, existingKey){
   pauseCamera();
   State.pendingLead = lead ? Object.assign({}, lead) : {name:'',company:'',title:'',email:'',phone:'',notes:'',source:'manual'};
   State.pendingLead._existingKey = existingKey || null;
+  setReviewPlaceholdersForExisting(!!existingKey);
 
   document.getElementById('f_name').value = State.pendingLead.name || '';
   document.getElementById('f_company').value = State.pendingLead.company || '';

@@ -297,6 +297,23 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.13.5** — barcode decoder rewrite and QR worker fix (both found from a real browser console)
+  - Fixed: after v1.13.4 restored the `@zxing/library` script, barcode reading still reported
+    "unavailable". The console showed the library loaded but the reader method the app called
+    (`decodeOnceFromVideoElement` on `BrowserMultiFormatReader`) wasn't present in that build.
+    Barcode decoding now uses the library's core classes directly (`MultiFormatReader` reading a
+    canvas snapshot of the camera frame, 1D formats only, `TRY_HARDER` on), checked by export name
+    so any future failure says exactly what's missing. Not camera-tested in the sandbox it was
+    written in — verify on a real device with Code128 and EAN-13 (`compass-leads-test-barcodes.pdf`).
+  - Fixed: the same console showed `qr-scanner` throwing "Failed to resolve module specifier
+    './qr-scanner-worker.min.js'" about five times a second. The CDN build loads its decoding
+    worker with a relative `import()`, which fails when the library itself comes from a CDN.
+    Browsers with a native `BarcodeDetector` (Chrome on Android) skip the worker and never hit
+    it; desktop Chrome and iOS Safari do, so QR scanning was likely broken there. `QrScanner.WORKER_PATH`
+    now points at the same version's worker on jsDelivr. Also not testable in the sandbox — verify
+    QR scanning on desktop Chrome and on an iPhone.
+  - Changed: added the standard `mobile-web-app-capable` meta tag alongside the Apple one
+    (Chrome logs a deprecation warning without it).
 - **v1.13.4** — barcode fix, navigation fix, attendee search, handoff cleanup
   - Fixed: 1D barcode scanning never worked in production. The `@zxing/library` script tag
     (introduced in v1.11.3) had a corrupted URL — the version segment had been replaced by the

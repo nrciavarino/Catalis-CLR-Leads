@@ -25,7 +25,7 @@
      ZXing. Still loaded defensively — see initBarcodeReader() — so if this
      script fails to load for any reason, barcode detection just silently
      stays off; QR scanning is completely unaffected either way. -->
-<script src="https://unpkg.com/@zxing/[email protected]"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <!-- QR-code GENERATION (distinct from the ZXing/qr-scanner DECODING libraries
      above) — used only for the rep's own "share my card" QR (backlog #8).
@@ -404,6 +404,10 @@
         <button class="btn btn-outline grow btn-sm" onclick="addCustomColumn()">+ Add column</button>
       </div>
     </div>
+    <div class="card" style="padding:10px 12px;">
+      <input type="text" id="attendeeSearch" placeholder="Search attendees by name or company…" aria-label="Search attendees by name or company" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <div class="hint" id="attendeeSearchCount" style="margin-top:6px;display:none;"></div>
+    </div>
     <div class="card" style="overflow-x:auto;">
       <div class="hint" id="attendeeSwipeHint" style="margin-bottom:6px;">Name stays put — swipe sideways for the rest →</div>
       <div class="hint" style="margin-bottom:6px;">Tap a column header to sort</div>
@@ -413,6 +417,7 @@
         <tbody id="attendeeTbody"></tbody>
       </table>
       <div class="empty-state" id="attendeeEmpty" style="display:none;padding:24px 8px;"><b>No attendee list yet</b>Upload a CSV above, or scans will just use what's on the badge.</div>
+      <div class="empty-state" id="attendeeNoMatch" style="display:none;padding:24px 8px;"><b>No matching attendees</b>Try a different spelling, or clear the search.</div>
     </div>
     <button class="btn btn-primary btn-block" id="btnSaveAttendees">Save attendee list</button>
   </div>
@@ -590,7 +595,8 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.13.3'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.13.4'; // bump this on every shipped change so it's obvious whether a device is up to date
+const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
 if(setupVersionEl) setupVersionEl.textContent = APP_VERSION;
@@ -780,6 +786,7 @@ const State = {
   unsubEngagementReasons: null,
   pendingLead: null,
   setupUnlocked: false, // session-only (not persisted) — see renderSecurityCard(); a fresh page load always re-locks if a PIN is set
+  reviewReturnTab: 'scan', // which tab the review screen returns to on Back/Cancel/Save — set in openReview(), so editing from Leads lands back on Leads
   repCard: safeJSONParse(localStorage.getItem(LS_REP_CARD), null) || {title:'', company:'', email:'', phone:''}, // the rep's own card fields for "share my card" (backlog #8) — name comes from workerName
   showArchivedEvents: false, // per-tab-open UI toggle (not persisted) — see renderEventsList()
 };
@@ -1210,6 +1217,7 @@ async function setActiveEvent(id){
   // choice yet has a reasonable starting default.
   localStorage.setItem(LS_ACTIVE_EVENT, id || '');
   State.activeEventId = id;
+  const attSearch = document.getElementById('attendeeSearch'); if(attSearch) attSearch.value = ''; // a leftover filter from the previous event would hide rows in this one
   updateEventPill();
   renderEventsList(); // the "Active" badge / "Make active" button lives here too — must redraw it directly, since it's not driven by the same leads/attendees snapshot that subscribeToActiveEvent() below triggers
   subscribeToActiveEvent();
@@ -1491,9 +1499,26 @@ function renderAttendeeTable(){
     const handle = `<span class="col-resize-handle" onpointerdown="startColResize(event,'${c.key}')" onclick="event.stopPropagation()" title="Drag to resize column" aria-hidden="true"></span>`;
     return `<th scope="col" class="sortable" onclick="sortAttendees('${c.key}')" aria-sort="${active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}" title="Sort by ${esc(c.label)}">${esc(c.label)}${arrow}${removeBtn}${handle}</th>`;
   }).join('') + `<th scope="col"><span class="sr-only">Row actions</span></th>`;
-  if(!State.attendees.length){ tbody.innerHTML=''; empty.style.display='block'; updateStickyOffsets(); return; }
+  const noMatch = document.getElementById('attendeeNoMatch');
+  const countEl = document.getElementById('attendeeSearchCount');
+  if(!State.attendees.length){ tbody.innerHTML=''; empty.style.display='block'; noMatch.style.display='none'; countEl.style.display='none'; updateStickyOffsets(); return; }
   empty.style.display = 'none';
-  tbody.innerHTML = sortedAttendees().map((a) => {
+  // Search: every typed word must appear somewhere in "full name + company",
+  // in any order, so "smith john" and "john acme" both find John Smith at Acme.
+  const tokens = norm(document.getElementById('attendeeSearch').value).split(' ').filter(Boolean);
+  let rows = sortedAttendees();
+  if(tokens.length){
+    rows = rows.filter(a => {
+      const hay = norm(attendeeFullName(a) + ' ' + (a.company || ''));
+      return tokens.every(t => hay.includes(t));
+    });
+    countEl.textContent = 'Showing ' + rows.length + ' of ' + State.attendees.length;
+    countEl.style.display = 'block';
+  } else {
+    countEl.style.display = 'none';
+  }
+  noMatch.style.display = (tokens.length && !rows.length) ? 'block' : 'none';
+  tbody.innerHTML = rows.map((a) => {
     const cells = State.attendeeColumns.map(c => {
       const type = c.key==='email' ? 'email' : c.key==='phone' ? 'tel' : 'text';
       return `<td><input type="${type}" value="${esc(a[c.key])}" onchange="updateAttendeeField('${a.id}','${c.key}',this.value)"></td>`;
@@ -1537,6 +1562,7 @@ async function removeAttendeeRow(id){
   await State.db.collection('events').doc(State.activeEventId).collection('attendees').doc(id).delete();
 }
 function addAttendeeRow(){
+  document.getElementById('attendeeSearch').value = ''; // a blank new row would never match an active search and would look like the button did nothing
   const row = {id:'local-'+uid()};
   State.attendeeColumns.forEach(c => { row[c.key] = ''; });
   State.attendees.push(row);
@@ -1891,7 +1917,7 @@ async function generateReadout(leads){
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: ANTHROPIC_MODEL,
       max_tokens: 1200,
       messages: [{ role:'user', content: buildReadoutPrompt(leads) }]
     })
@@ -1954,6 +1980,7 @@ function pickPrizeWinner(){
 }
 document.getElementById('btnPickWinner').onclick = pickPrizeWinner;
 document.getElementById('leadSearch').addEventListener('input', renderLeadsList);
+document.getElementById('attendeeSearch').addEventListener('input', renderAttendeeTable);
 
 /* ---------- two-way card exchange: rep's own QR (backlog #8) ---------- */
 // Sequential, not simultaneous, by design: iOS Safari has no Web NFC write
@@ -2128,7 +2155,10 @@ function initBarcodeReader(){
     // wrapper's global as a defensive fallback in case the CDN swap ever
     // changes — costs nothing, and either shape gets validated below before use.
     const NS = window.ZXing || window.ZXingBrowser;
-    if(!NS || typeof NS.BrowserMultiFormatReader !== 'function') return null;
+    if(!NS || typeof NS.BrowserMultiFormatReader !== 'function'){
+      console.warn('Barcode library did not load (check the @zxing/library script tag and network) — QR scanning only.');
+      return null;
+    }
     let hints;
     if(NS.DecodeHintType && NS.BarcodeFormat && NS.DecodeHintType.POSSIBLE_FORMATS){
       // Explicit formats, not left to the reader's default — 1D formats have
@@ -2142,7 +2172,10 @@ function initBarcodeReader(){
       ].filter(Boolean));
     }
     const reader = hints ? new NS.BrowserMultiFormatReader(hints) : new NS.BrowserMultiFormatReader();
-    if(!reader || typeof reader.decodeOnceFromVideoElement !== 'function') return null;
+    if(!reader || typeof reader.decodeOnceFromVideoElement !== 'function'){
+      console.warn('Barcode library loaded but its API did not match what the app expects — QR scanning only.');
+      return null;
+    }
     barcodeReader = reader;
   }catch(e){ console.error('Barcode reader unavailable, continuing QR-only:', e); barcodeReader = null; }
   return barcodeReader;
@@ -2150,7 +2183,16 @@ function initBarcodeReader(){
 function startBarcodePolling(){
   if(barcodePollTimer) return; // already running
   const reader = initBarcodeReader();
-  if(!reader) return; // ZXing didn't load or its API didn't match — QR-only, silently
+  if(!reader){
+    // QR-only. Say so on screen (was silent before v1.13.4, which is how a
+    // broken barcode script tag went unnoticed) so a rep isn't left aiming
+    // the camera at a barcode that will never register.
+    const st = document.getElementById('scanStatus');
+    if(st && st.textContent === 'Point camera at badge QR code'){
+      st.textContent = 'Point camera at badge QR code \u00b7 barcode reading unavailable';
+    }
+    return;
+  }
   // Only claim barcode support in the on-screen instructions once it's
   // actually confirmed active — never promise something that silently isn't
   // there (e.g. the CDN was unreachable on this network).
@@ -2359,7 +2401,7 @@ async function extractBadgeFields(base64, mediaType){
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: ANTHROPIC_MODEL,
       max_tokens: 500,
       messages: [{ role:'user', content: [
         {type:'image', source:{type:'base64', media_type: mediaType, data: base64}},
@@ -2401,6 +2443,15 @@ function setReviewPlaceholdersForExisting(isExisting){
 
 /* ---------- review / save flow ---------- */
 function openReview(lead, existingKey){
+  // Remember where the rep came from so Back/Cancel/Save return there instead
+  // of always dumping them on Scan. Only captured when the review screen isn't
+  // already open — otherwise "Edit that lead instead" (opened FROM review)
+  // would overwrite the real origin with nothing.
+  if(!document.getElementById('view-review').classList.contains('active')){
+    const activeBtn = document.querySelector('.tab-btn.active');
+    const from = activeBtn ? activeBtn.dataset.tab : 'scan';
+    State.reviewReturnTab = (from === 'leads' || from === 'attendees') ? from : 'scan';
+  }
   pauseCamera();
   State.pendingLead = lead ? Object.assign({}, lead) : {name:'',company:'',title:'',email:'',phone:'',notes:'',source:'manual'};
   State.pendingLead._existingKey = existingKey || null;
@@ -2641,7 +2692,7 @@ async function searchWebForContact(name, company, title){
       'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6', max_tokens: 700,
+      model: ANTHROPIC_MODEL, max_tokens: 700,
       tools: [{type:'web_search_20250305', name:'web_search'}],
       messages: [{ role:'user', content:
         `Find a publicly listed work email and/or phone number for "${name}"` +
@@ -2668,7 +2719,12 @@ async function searchWebForContact(name, company, title){
   return { email: obj.email||'', phone: obj.phone||'', sourceNote: obj.sourceNote||'' };
 }
 ['f_email','f_phone'].forEach(id => document.getElementById(id).addEventListener('input', updateContactAlert));
-function closeReview(){ State.pendingLead = null; switchTab('scan'); }
+function closeReview(){
+  State.pendingLead = null;
+  const back = State.reviewReturnTab || 'scan';
+  State.reviewReturnTab = 'scan';
+  switchTab(back);
+}
 
 document.getElementById('btnSaveLead').onclick = async () => {
   const name = document.getElementById('f_name').value.trim();

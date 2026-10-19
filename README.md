@@ -22,7 +22,9 @@ matches what's in this repo before assuming a device is up to date)
   also recognizes business cards; Claude decides which one it's looking at and reads back
   whatever name/company/title/email/phone it can find either way
 - **Attendee cross-reference** — upload any CSV; name/company/email/phone columns are matched
-  automatically however they're labeled, and anything else in the file becomes its own column
+  automatically however they're labeled, and anything else in the file becomes its own column.
+  A search box above the attendee table filters by name or company as you type (any word order),
+  so a long list is quick to scan for the person standing in front of you
 - **Web-search fallback** — if a lead is missing contact info and the attendee list doesn't have
   it either, one tap searches public `.gov`/county-directory listings for it (opt-in, not
   automatic — it's a multi-second call and shouldn't slow down scanning). Once a search actually
@@ -96,11 +98,13 @@ matches what's in this repo before assuming a device is up to date)
   - the optional web-search contact lookup (`web_search` tool)
 - **[qr-scanner](https://github.com/nimiq/qr-scanner)** for QR decoding, running continuously
   against the live camera view
-- **[@zxing/browser](https://github.com/zxing-js/browser)** for 1D barcode decoding (Code128/39,
+- **[@zxing/library](https://github.com/zxing-js/library)** (loaded directly, not the `@zxing/browser`
+  wrapper — see the v1.11.3 changelog entry) for 1D barcode decoding (Code128/39,
   EAN, UPC, ITF, Codabar) — a second, independent check against that same camera view on a
   ~450ms interval, so QR and barcode both work without the rep picking a mode. Loaded
   defensively: if this script fails to load, or its API doesn't match what's expected, barcode
-  detection just silently stays off and QR scanning is completely unaffected
+  detection stays off, QR scanning is completely unaffected, and (since v1.13.4) the scan screen
+  says "barcode reading unavailable" and the browser console logs why
 - **[PapaParse](https://www.papaparse.com/)** for CSV import/export
 - Hosted anywhere static (GitHub Pages, Firebase Hosting, Netlify) — camera access requires
   HTTPS, so it won't work opened directly from a local file
@@ -111,7 +115,8 @@ matches what's in this repo before assuming a device is up to date)
 |---|---|
 | `index.html` | The whole app |
 | `manifest.json` | PWA manifest, enables "Add to Home Screen" on Android |
-| `service-worker.js` | Minimal service worker, exists only so Chrome treats the app as installable |
+| `service-worker.js` | Minimal service worker, exists only so Chrome treats the app as installable (it does no caching, so the app is not usable offline) |
+| `ROADMAP.md` | Open backlog with a 1–5 lift/effort estimate per item, plus platform-hardening items identified for a production handoff |
 | `icon-192.png`, `icon-512.png` | Home-screen icons |
 | `test-badges.html`, `test-badges-2.html` | Printable/on-screen-scannable fake badges for testing the scan flow (QR, vCard, barcode, no-code, varied colors/layouts) |
 | `sample-attendees.csv`, `sample-attendees-2.csv` | Sample attendee lists matching the test badges, for exercising attendee-match and dynamic columns |
@@ -176,19 +181,29 @@ If you're re-securing a project that's already past its 30-day test-mode window 
 requests, do step 1 and step 2 in that order — signing in has to work before the rules can
 require it.
 
-### 7. Required for cross-event memory: one Firestore index
+### 7. Required for cross-event memory: Firestore indexes and a rules entry
 
-The email and phone matches work automatically (Firestore indexes single fields by default,
-including for the collection-group query this feature relies on). The name+company match needs
-one composite index created once:
+The cross-event match runs a **collection-group query** on `leads`. Two things must be in place
+for it to work; without them it fails silently (logged to the browser console as "Cross-event
+lookup failed", never shown to the rep):
 
-1. Firebase console → **Firestore Database** → **Indexes** tab → **Add index**.
-2. **Collection ID:** `leads`, scope **Collection group** (not "Collection").
-3. Fields: `name` (Ascending), then `company` (Ascending) → **Create**.
+1. **Rules.** `firestore.rules` must include the recursive `match /{path=**}/leads/{leadId}`
+   read rule (it does, as of v1.13.4 — publish the current file). A per-path rule on
+   `events/{eventId}/leads/{leadId}` alone does **not** cover collection-group queries.
+2. **Indexes with *collection group* scope.** Firestore does not create these automatically
+   (only collection-scope indexes are automatic). Three are needed on `leads`:
+   - single-field `emailLower` (collection group scope)
+   - single-field `phoneNormalized` (collection group scope)
+   - composite `name` (Ascending) + `company` (Ascending) (collection group scope)
 
-Until this is created, name+company matching silently fails (logged to the browser console, not
-shown to the rep) while email/phone matching keeps working — see
-[Data model](#data-model-firestore) below.
+   Easiest route: connect the app, scan or enter a lead that has an email, phone, and
+   name+company, open the browser console, and follow the link Firestore prints in each
+   "requires an index" error — it opens the console with the index pre-filled. Or create them by
+   hand under Firebase console → **Firestore Database** → **Indexes** (Composite tab for the
+   name+company one, Single field tab → **Add exemption** for the other two). Indexes take a
+   minute or two to build.
+
+See [Data model](#data-model-firestore) below.
 
 ## Data model (Firestore)
 
@@ -228,9 +243,9 @@ cross-event match (see [Known limitations](#known-limitations)).
 
 Cross-event matching runs a Firestore **collection-group query** across every event's `leads`
 subcollection at once, rather than a separate top-level "contacts" collection — no data
-restructuring, and the existing security rule for `events/{eventId}/leads/{leadId}` already
-covers it (a collection-group query is still bound by the same per-path rule). See
-[Setup](#setup) step 7 for the one index this needs.
+restructuring. Collection-group queries need their own rule (`match /{path=**}/leads/{leadId}`,
+which requires `rules_version = '2'`) and collection-group-scoped indexes; the per-path rule on
+`events/{eventId}/leads/{leadId}` does not cover them. See [Setup](#setup) step 7.
 
 `contactSource` on a lead is one of `badge`, `attendee-list`, `web-search`, or empty — mainly so
 a web-found contact can be flagged for verification in the CSV export rather than treated as
@@ -282,18 +297,40 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.13.4** — barcode fix, navigation fix, attendee search, handoff cleanup
+  - Fixed: 1D barcode scanning never worked in production. The `@zxing/library` script tag
+    (introduced in v1.11.3) had a corrupted URL — the version segment had been replaced by the
+    literal text `[email protected]`, which is what Cloudflare's email obfuscation substitutes
+    for `library@x.y.z` when copied from a rendered page. The script silently failed to load, and
+    the app's defensive fallback hid it. Now pinned to
+    `https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js`. Verify on a real device with a
+    Code128/EAN badge after deploying — it could not be camera-tested in the sandbox it was fixed in.
+  - Added: when the barcode library fails to load or its API doesn't match, the scan screen now
+    says "barcode reading unavailable" and the console logs the reason, instead of failing silently.
+  - Fixed: Back/Cancel/Save on the lead edit screen always returned to Scan. It now returns to
+    wherever the rep came from — Leads when editing a lead, Attendees when adding from the
+    attendee list, Scan otherwise.
+  - Added: attendee search box above the attendee table — filters by name or company as you
+    type, any word order, with a "Showing X of Y" count. "+ Add row" clears the filter so the
+    new blank row is visible; switching events clears it too.
+  - Changed: the Anthropic model name now lives in one constant (`ANTHROPIC_MODEL`) instead of
+    three hardcoded copies.
+  - Docs: corrected the library name in "How it's built", added `ROADMAP.md`, fixed literal
+    `\uXXXX` escape text that had leaked into older changelog entries, and corrected Setup step 7
+    and the Data model note about cross-event matching (it needs a `/{path=**}/leads/{leadId}`
+    rule and collection-group-scoped indexes — see below).
 - **v1.13.3** — proactive UX pass (same failure class as v1.13.2, found by re-checking the rest of
   the app for the same patterns rather than waiting to hear about them from the field)
-  - Fixed: Setup \u2192 "Your contact card" had the exact placeholder-vs-real-data ambiguity v1.13.2
-    fixed on the lead-edit screen, just never updated there \u2014 a rep who saved only their title
+  - Fixed: Setup → "Your contact card" had the exact placeholder-vs-real-data ambiguity v1.13.2
+    fixed on the lead-edit screen, just never updated there — a rep who saved only their title
     would see it sitting next to two placeholder hints with nothing to tell them apart. Blank
     fields on an already-saved card now show nothing, same as a saved lead.
   - Fixed: the placeholder colors introduced in v1.13.2 measured ~2.4:1 contrast against white
-    (and the missing-field pink) \u2014 below WCAG's 3:1 floor for legible text, risking illegible-
+    (and the missing-field pink) — below WCAG's 3:1 floor for legible text, risking illegible-
     in-bright-booth-light irony for text whose job is to be read as a hint. Darkened both
     (~3.5:1/4:1) while keeping them clearly lighter than real entered text (~15:1).
   - Fixed: "📇 My card — show to attendee" wrapped to two lines with the icon floating oddly at
-    160% text scale \u2014 the app's own maximum, intended for booth readability. Shortened to
+    160% text scale — the app's own maximum, intended for booth readability. Shortened to
     "📇 My card" (the modal itself still explains what it's for).
   - Fixed: the attendee-table column resize handle had a 9px touch target, well under the ~44px
     comfortable minimum, making it fiddly to grab by finger. Widened the invisible hit area to
@@ -473,9 +510,9 @@ manually replace `index.html` on the host.
 
 - 1D barcode decoding depends on a third-party CDN script (`@zxing/library`) loading
   successfully; if it doesn't (network policy, ad-blocker, offline install), the app falls back
-  to QR + photo/manual entry with no error shown to the rep — the on-screen instructions
-  correctly stop mentioning "barcode" in that case, but there's no visible warning that it's
-  degraded from a normal launch. Check the browser console if barcode scans aren't registering.
+  to QR + photo/manual entry. Since v1.13.4 the scan screen says "barcode reading unavailable"
+  in that case and the console logs the reason. The scripts load from public CDNs at runtime
+  with no integrity hashes (see `ROADMAP.md`, platform hardening).
 - Cross-event relationship memory only matches leads saved from v1.11.0 onward — `emailLower`
   and `phoneNormalized` aren't retroactively added to leads captured before that, so a real past
   encounter from an older event won't surface until that person is captured again after this
@@ -483,7 +520,8 @@ manually replace `index.html` on the host.
 - Splitting a single "Name" column (when a CSV has no separate First/Last columns) is a
   last-word-is-last-name guess — compound last names will split wrong.
 - No offline support. Every screen assumes live connectivity to Firestore and, if used, the
-  Anthropic API.
+  Anthropic API. The included service worker exists only to make the app installable; it does
+  not cache anything.
 - Photo-based badge reading, the web-search lookup, and the event readout (v1.12.0) all require
   the person using that device to have entered their own Anthropic API key under Setup.
 - The Setup PIN (v1.12.0) is a light deterrent against accidental edits at a shared device, not

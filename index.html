@@ -497,8 +497,10 @@
     <h2 class="section-title">Badge &amp; business card photo reading (optional)</h2>
     <div class="card">
       <p>If a badge has no QR code — or you're photographing a business card instead — "No QR — take photo" can have Claude read the name/company/email off the photo automatically, badge or card either way. This calls the Anthropic API directly from the phone using your own API key — it never touches Claude.ai. Leave blank to skip this and just type badges in manually.</p>
-      <div class="field"><label class="field-label" for="setupApiKey">Anthropic API key</label><input type="password" id="setupApiKey" placeholder="sk-ant-…"></div>
+      <div class="field"><label class="field-label" for="setupApiKey">Anthropic API key</label><input type="password" id="setupApiKey" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
       <button class="btn btn-outline btn-block" id="btnSaveApiKey">Save key</button>
+      <button class="btn btn-outline btn-block" id="btnTestApiKey" style="margin-top:8px;">Test key</button>
+      <div class="hint" id="setupAiLastError" style="display:none;margin-top:8px;"></div>
     </div>
     <h2 class="section-title">Send this setup to the rest of the team</h2>
     <div class="card">
@@ -604,7 +606,8 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.13.5'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.13.6'; // bump this on every shipped change so it's obvious whether a device is up to date
+const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
 const setupVersionEl = document.getElementById('setupVersionLine');
@@ -753,6 +756,50 @@ function norm(s){ return (s||'').toLowerCase().normalize('NFKD').replace(/[^\w\s
 // +1 so "+1 555-123-4567" and "555.123.4567" match) — used for cross-event
 // matching, where two entries for the same number are rarely typed the same way.
 function normalizePhone(s){ const digits = (s||'').replace(/\D/g,''); return digits.length > 10 ? digits.slice(-10) : digits; }
+/* ---------- AI error handling (v1.13.6) ----------
+   Until now every AI failure (bad key, no signal, rate limit, a photo the model
+   couldn't parse) showed the same generic toast and only logged the real cause
+   to a console that iPhones don't expose. These turn a failure into a message a
+   rep can act on, and keep the last one visible in Setup. */
+// The key as it should go over the wire: no whitespace, no characters outside
+// printable ASCII (a stray space or newline from a paste, or a smart-punctuation
+// dash, makes fetch() throw before the request is even sent).
+function anthropicKey(){
+  return (localStorage.getItem(LS_APIKEY) || '').replace(/[^\x21-\x7E]/g, '');
+}
+function aiHttpError(resp, errText){
+  const e = new Error('API error ' + resp.status + ' ' + (errText || '').slice(0, 200));
+  e.status = resp.status;
+  return e;
+}
+function describeAiError(err){
+  const st = err && err.status, msg = String((err && err.message) || err || '');
+  if(st === 401) return 'AI key was rejected (401) \u2014 re-enter it under Setup';
+  if(st === 403) return 'AI key not allowed (403) \u2014 check the key under Setup';
+  if(st === 404) return 'AI model not found (404) \u2014 tell the app owner';
+  if(st === 413) return 'Photo too large (413) \u2014 retake it or enter manually';
+  if(st === 400) return 'AI rejected that photo (400) \u2014 retake it, or enter manually';
+  if(st === 429) return 'AI is rate-limited (429) \u2014 wait a minute and retry';
+  if(st >= 500)  return 'Anthropic is busy (' + st + ') \u2014 try again in a moment';
+  if(err instanceof SyntaxError || /No text in response|No JSON/i.test(msg)) return 'Read the photo but found no contact details \u2014 retake it closer, in good light';
+  if(err instanceof TypeError){
+    if(/invalid|ISO-8859|characters/i.test(msg)) return 'AI key has invalid characters \u2014 re-enter it under Setup';
+    return 'Can\'t reach Anthropic \u2014 check wifi or cellular';
+  }
+  return 'Could not read the badge \u2014 enter it manually';
+}
+function recordAiError(what, err){
+  try{ localStorage.setItem(LS_LASTAIERR, JSON.stringify({at:Date.now(), what, detail:String((err && err.message) || err).slice(0, 300)})); }catch(e){}
+}
+function clearAiError(){ try{ localStorage.removeItem(LS_LASTAIERR); }catch(e){} }
+function renderAiErrorLine(){
+  const el = document.getElementById('setupAiLastError');
+  if(!el) return;
+  const rec = safeJSONParse(localStorage.getItem(LS_LASTAIERR), null);
+  if(!rec){ el.style.display = 'none'; el.textContent = ''; return; }
+  el.textContent = 'Last AI problem on this phone (' + rec.what + ', ' + new Date(rec.at).toLocaleString() + '): ' + rec.detail;
+  el.style.display = 'block';
+}
 function toast(msg, ms){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'), ms||2200); }
 function fmtTime(ts){ if(!ts) return ''; const d=new Date(ts); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
 // One-tap contact: renders an email as a mailto: link, and a phone as both a
@@ -1036,6 +1083,7 @@ function prefillSetupView(){
   const key = localStorage.getItem(LS_APIKEY);
   document.getElementById('firebaseStatusLine').textContent = State.db ? 'Connected.' : 'Not connected.';
   if(key) document.getElementById('setupApiKey').placeholder = '•••••••••••••••• (saved — paste to replace)';
+  renderAiErrorLine();
   document.getElementById('setupRepTitle').value = State.repCard.title || '';
   document.getElementById('setupRepCompany').value = State.repCard.company || 'Catalis';
   document.getElementById('setupRepEmail').value = State.repCard.email || '';
@@ -1135,9 +1183,40 @@ document.getElementById('btnSaveFirebaseConfig').onclick = async () => {
     boot();
   }
 };
+document.getElementById('btnTestApiKey').onclick = async () => {
+  // Cheapest possible real request (1 token): proves the saved key, this
+  // phone's connection, and the model name all work, without needing a badge.
+  if(!anthropicKey()){ toast('Save an API key first'); return; }
+  toast('Testing key\u2026', 8000);
+  try{
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type':'application/json',
+        'x-api-key': anthropicKey(),
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 1, messages: [{role:'user', content:'hi'}] })
+    });
+    if(!resp.ok) throw aiHttpError(resp, await resp.text().catch(()=> ''));
+    clearAiError(); renderAiErrorLine();
+    toast('Key works \u2713', 4000);
+  }catch(err){
+    console.error(err);
+    recordAiError('key test', err); renderAiErrorLine();
+    toast(describeAiError(err), 7000);
+  }
+};
 document.getElementById('btnSaveApiKey').onclick = () => {
-  const v = document.getElementById('setupApiKey').value.trim();
-  if(v){ localStorage.setItem(LS_APIKEY, v); toast('API key saved on this phone'); }
+  const raw = document.getElementById('setupApiKey').value;
+  const v = raw.replace(/[^\x21-\x7E]/g, ''); // drop spaces, newlines, smart-punctuation lookalikes from a paste
+  if(v){
+    localStorage.setItem(LS_APIKEY, v);
+    if(!v.startsWith('sk-ant-')) toast('Saved \u2014 but that doesn\'t look like an Anthropic key (should start sk-ant-)', 6000);
+    else if(v !== raw.trim()) toast('API key saved (stray characters removed)');
+    else toast('API key saved on this phone');
+  }
   else{ localStorage.removeItem(LS_APIKEY); toast('API key cleared'); }
   document.getElementById('setupApiKey').value = '';
   prefillSetupView();
@@ -1916,7 +1995,7 @@ ${notable.length ? notable.join('\n') : '(none captured)'}
 Write the readout with these sections: OVERVIEW (2-3 sentences), KEY TAKEAWAYS (3-5 bullet-style lines using a leading dash, not asterisks), NOTABLE CONVERSATIONS (pull from the rep notes above where there's real substance), COMPETITIVE SIGNALS (what current software came up and what it suggests), RECOMMENDED FOLLOW-UPS (concrete, named where possible). Keep the whole thing to roughly 300-450 words.`;
 }
 async function generateReadout(leads){
-  const apiKey = localStorage.getItem(LS_APIKEY);
+  const apiKey = anthropicKey();
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -2391,14 +2470,26 @@ document.getElementById('photoInput').addEventListener('change', async function(
   if(!dataUrl){ hideScanOverlay(); toast('Could not read that photo'); return; }
   const base64 = dataUrl.split(',')[1];
   const mediaType = dataUrl.startsWith('data:image/jpeg') ? 'image/jpeg' : (file.type || 'image/jpeg');
+  // The API only accepts JPEG/PNG/GIF/WebP. Resizing normally turns anything
+  // (including iPhone HEIC) into JPEG; this catches the case where resizing
+  // failed and the raw file would be rejected anyway.
+  if(!/^image\/(jpeg|png|gif|webp)$/.test(mediaType)){
+    hideScanOverlay();
+    recordAiError('badge photo', new Error('Unsupported photo format: ' + mediaType));
+    toast('Photo format not supported (' + mediaType + ') \u2014 enter manually', 6000);
+    openReview({source:'photo'});
+    return;
+  }
   try{
     const extracted = await extractBadgeFields(base64, mediaType);
+    clearAiError();
     hideScanOverlay();
     openReview(Object.assign({source:'photo'}, extracted));
   }catch(err){
     console.error(err);
+    recordAiError('badge photo', err);
     hideScanOverlay();
-    toast('Could not read the badge — enter it manually');
+    toast(describeAiError(err), 6500);
     openReview({source:'photo'});
   }
 });
@@ -2411,7 +2502,7 @@ function showScanOverlay(msg){
 }
 function hideScanOverlay(){ const ov=document.getElementById('scanOverlay'); if(ov) ov.style.display='none'; }
 async function extractBadgeFields(base64, mediaType){
-  const apiKey = localStorage.getItem(LS_APIKEY);
+  const apiKey = anthropicKey();
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -2431,13 +2522,16 @@ async function extractBadgeFields(base64, mediaType){
   });
   if(!resp.ok){
     const errText = await resp.text().catch(()=> '');
-    throw new Error('API error ' + resp.status + ' ' + errText.slice(0,200));
+    throw aiHttpError(resp, errText);
   }
   const data = await resp.json();
   const textBlock = (data.content || []).find(b => b.type === 'text');
   if(!textBlock) throw new Error('No text in response');
-  const clean = textBlock.text.replace(/```json|```/g,'').trim();
-  const obj = JSON.parse(clean);
+  // Tolerate the model wrapping the JSON in prose or code fences: take the
+  // first {...} block rather than requiring the whole reply to be bare JSON.
+  const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+  if(!jsonMatch) throw new Error('No JSON in response');
+  const obj = JSON.parse(jsonMatch[0]);
   return { name: obj.name||'', company: obj.company||'', title: obj.title||'', email: obj.email||'', phone: obj.phone||'' };
 }
 
@@ -2703,7 +2797,7 @@ function performWebContactSearch(){
   });
 }
 async function searchWebForContact(name, company, title){
-  const apiKey = localStorage.getItem(LS_APIKEY);
+  const apiKey = anthropicKey();
   if(!apiKey) return null;
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

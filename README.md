@@ -297,6 +297,23 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.13.6** — AI failures now say why (reported by an iPhone user: "Could not read the badge")
+  - Changed: every failure of badge/business-card photo reading used the same generic toast, and
+    the real cause only went to a browser console that iPhones don't expose. The toast now names
+    the cause: key rejected (401/403), rate-limited (429), Anthropic busy (5xx), photo not
+    accepted (400/413), no connection, key with invalid characters, or "read the photo but found no
+    contact details". Error toasts stay up longer (about 6 seconds).
+  - Added: Setup → **Test key** button (a 1-token request) that proves the saved key, the phone's
+    connection and the model name work without needing a badge, and a "Last AI problem on this
+    phone" line under it that keeps the most recent failure (cleared by the next success).
+  - Fixed: pasted keys with a trailing space, newline or smart-punctuation lookalike made `fetch()`
+    throw before sending anything. Keys are now cleaned on save and again on use, and a key that
+    doesn't start with `sk-ant-` gets a warning. The key field also turns off iOS autocorrect and
+    autocapitalize.
+  - Fixed: the photo reader required the model's reply to be bare JSON; it now takes the first
+    `{...}` block, so a reply wrapped in a sentence or code fence still parses.
+  - Fixed: if a photo couldn't be converted to JPEG and its original format isn't one the API
+    accepts (for example HEIC), the app says so instead of sending it to be rejected.
 - **v1.13.5** — barcode decoder rewrite and QR worker fix (both found from a real browser console)
   - Fixed: after v1.13.4 restored the `@zxing/library` script, barcode reading still reported
     "unavailable". The console showed the library loaded but the reader method the app called

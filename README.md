@@ -297,6 +297,16 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.13.7** — remove an uploaded attendee list
+  - Added: **Remove entire attendee list** button on the Attendees tab (shown only when a list
+    exists). Until now the only way to undo a wrong upload was ✕ on every row, and CSV uploads *add*
+    to whatever is already there. The button asks for confirmation (with the count and event name),
+    then deletes every saved attendee row for that event for the whole team, drops any not-yet-saved
+    rows, and resets the columns to the standard five so the next upload defines its own. It asks the
+    server for the saved rows instead of trusting the phone's local copy, and deletes in batches under
+    Firestore's 500-operation limit, so large lists work. Leads already captured never reference
+    attendee rows, so they are unaffected. On failure nothing is lost on screen and the button
+    re-enables.
 - **v1.13.6** — AI failures now say why (reported by an iPhone user: "Could not read the badge")
   - Changed: every failure of badge/business-card photo reading used the same generic toast, and
     the real cause only went to a browser console that iPhones don't expose. The toast now names

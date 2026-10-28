@@ -429,6 +429,7 @@
       <div class="empty-state" id="attendeeNoMatch" style="display:none;padding:24px 8px;"><b>No matching attendees</b>Try a different spelling, or clear the search.</div>
     </div>
     <button class="btn btn-primary btn-block" id="btnSaveAttendees">Save attendee list</button>
+    <button class="btn btn-danger btn-block" id="btnClearAttendees" style="margin-top:8px;display:none;">Remove entire attendee list</button>
   </div>
 
   <div class="view" id="view-events">
@@ -606,7 +607,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.13.6'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.13.7'; // bump this on every shipped change so it's obvious whether a device is up to date
 const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
@@ -1588,6 +1589,7 @@ function renderAttendeeTable(){
     return `<th scope="col" class="sortable" onclick="sortAttendees('${c.key}')" aria-sort="${active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}" title="Sort by ${esc(c.label)}">${esc(c.label)}${arrow}${removeBtn}${handle}</th>`;
   }).join('') + `<th scope="col"><span class="sr-only">Row actions</span></th>`;
   const noMatch = document.getElementById('attendeeNoMatch');
+  document.getElementById('btnClearAttendees').style.display = State.attendees.length ? '' : 'none'; // nothing to remove on an empty list
   const countEl = document.getElementById('attendeeSearchCount');
   if(!State.attendees.length){ tbody.innerHTML=''; empty.style.display='block'; noMatch.style.display='none'; countEl.style.display='none'; updateStickyOffsets(); return; }
   empty.style.display = 'none';
@@ -1677,6 +1679,42 @@ document.getElementById('btnSaveAttendees').onclick = async () => {
     toast('Attendee list saved (' + State.attendees.length + ' people)');
   }catch(err){ console.error(err); toast('Save failed — check connection'); }
   btn.disabled = false; btn.textContent = 'Save attendee list';
+};
+// Remove the whole attendee list for the active event (e.g. the wrong CSV was
+// uploaded). CSV uploads ADD to whatever is already there, so before this
+// the only way to start over was ✕ on every row. Deletes the saved rows for
+// everyone on the team, drops any not-yet-saved local rows, and resets the
+// columns to the standard five so the next upload defines its own. Leads that
+// were already captured never reference attendee rows, so they are untouched.
+document.getElementById('btnClearAttendees').onclick = async () => {
+  if(!State.activeEventId){ toast('Add an event first'); return; }
+  const count = State.attendees.length;
+  if(!count){ toast('There is no attendee list to remove'); return; }
+  const ev = State.events.find(e => e.id === State.activeEventId);
+  const name = ev && ev.name ? ' for "' + ev.name + '"' : '';
+  if(!confirm('Remove all ' + count + ' attendees' + name + '? This deletes the list for everyone on the team and cannot be undone. Leads you have already captured are not affected.')) return;
+  const btn = document.getElementById('btnClearAttendees');
+  btn.disabled = true; btn.textContent = 'Removing…';
+  try{
+    // Ask the server for the saved rows rather than trusting the local copy, so
+    // nothing is left behind if this phone's view was stale.
+    const col = State.db.collection('events').doc(State.activeEventId).collection('attendees');
+    const snap = await col.get();
+    let batch = State.db.batch(), ops = 0;
+    for(const d of snap.docs){
+      batch.delete(d.ref);
+      ops++;
+      if(ops >= 450){ await batch.commit(); batch = State.db.batch(); ops = 0; } // stay under Firestore's 500-op batch limit
+    }
+    if(ops > 0) await batch.commit();
+    State.attendees = [];
+    State.attendeeColumns = CANONICAL_COLS.slice();
+    await persistAttendeeColumns();
+    document.getElementById('attendeeSearch').value = '';
+    renderAttendeeTable();
+    toast('Attendee list removed (' + count + ' people)');
+  }catch(err){ console.error(err); toast('Remove failed \u2014 check connection and try again', 5000); }
+  btn.disabled = false; btn.textContent = 'Remove entire attendee list';
 };
 document.getElementById('attendeeCsvInput').addEventListener('change', function(e){
   const file = e.target.files[0];

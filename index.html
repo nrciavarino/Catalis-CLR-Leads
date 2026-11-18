@@ -593,6 +593,10 @@
       </div>
       <button class="btn btn-primary btn-block" id="btnGateConnect">Connect</button>
       <div class="hint" id="gateStatusLine" style="margin-top:8px;"></div>
+      <div class="field" style="margin-top:18px;"><label class="field-label" for="gateSetupLink">Or paste a setup link from your team</label>
+        <input type="text" id="gateSetupLink" class="mono" placeholder="https://…#setup=…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      </div>
+      <button class="btn btn-outline btn-block" id="btnGateSetupLink">Connect with setup link</button>
     </div>
   </div>
 </div>
@@ -607,7 +611,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.13.7'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.13.8'; // bump this on every shipped change so it's obvious whether a device is up to date
 const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
@@ -1257,21 +1261,45 @@ document.getElementById('btnGenSetupLink').onclick = () => {
     catch(e){ document.getElementById('setupLinkOut').select(); toast('Select-all done — copy with your keyboard'); }
   };
 };
-function tryConsumeSetupLink(){
-  if(!location.hash.startsWith('#setup=')) return false;
+// Saves the Firebase config (and API key, if included) from the encoded part of
+// a setup link. Returns true on success.
+function applySetupEncoded(encoded){
   try{
-    const payload = JSON.parse(decodeURIComponent(atob(location.hash.slice(7))));
+    const payload = JSON.parse(decodeURIComponent(atob(encoded)));
     if(payload.fb && payload.fb.projectId){
       localStorage.setItem(LS_FIREBASE, JSON.stringify(payload.fb));
       if(payload.key) localStorage.setItem(LS_APIKEY, payload.key);
-      // Scrub the sensitive hash out of the visible URL / browser history right away.
-      history.replaceState(null, '', location.pathname);
-      toast('Connected from setup link');
       return true;
     }
   }catch(e){ console.error('bad setup link', e); }
   return false;
 }
+function tryConsumeSetupLink(){
+  if(!location.hash.startsWith('#setup=')) return false;
+  if(applySetupEncoded(location.hash.slice(7))){
+    // Scrub the sensitive hash out of the visible URL / browser history right away.
+    history.replaceState(null, '', location.pathname);
+    toast('Connected from setup link');
+    return true;
+  }
+  return false;
+}
+// iPhone home-screen apps keep their OWN storage, separate from Safari, so a link
+// opened in Safari never reaches the installed app. This lets the rep paste the
+// link straight into the app's connect screen instead.
+document.getElementById('btnGateSetupLink').onclick = async () => {
+  const status = document.getElementById('gateStatusLine');
+  const raw = document.getElementById('gateSetupLink').value.trim();
+  const i = raw.indexOf('#setup=');
+  const encoded = i >= 0 ? raw.slice(i + 7) : raw.replace(/^setup=/, '');
+  if(!encoded || !applySetupEncoded(encoded)){ status.textContent = 'That doesn\'t look like a valid setup link \u2014 copy the whole link and try again.'; return; }
+  const cfg = safeJSONParse(localStorage.getItem(LS_FIREBASE), null);
+  if(cfg && await connectFirebase(cfg, status)){
+    document.getElementById('gateSetupLink').value = '';
+    document.getElementById('setupGate').style.display = 'none';
+    boot();
+  }
+};
 
 /* ---------- events ---------- */
 function loadEventsAndMeta(){
@@ -2931,6 +2959,8 @@ function boot(){
 }
 (async function init(){
   tryConsumeSetupLink(); // if this page was opened via a generated setup link, this saves it to localStorage first
+  // Ask the browser not to evict this app's saved settings (best effort; some iOS versions ignore it).
+  try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
   const savedCfg = localStorage.getItem(LS_FIREBASE);
   if(!savedCfg){
     document.getElementById('setupGate').style.display = 'block';
@@ -2948,7 +2978,14 @@ function boot(){
   }
   const status = document.getElementById('gateStatusLine');
   if(await connectFirebase(cfg, status)) boot();
-  else document.getElementById('setupGate').style.display = 'block';
+  else{
+    // The config IS saved \u2014 the connection just failed (weak signal, Firebase hiccup).
+    // Show it pre-filled with a clear message so the rep taps Connect to retry
+    // instead of thinking the app forgot its setup and re-typing it.
+    document.getElementById('gateFirebaseConfig').value = savedCfg;
+    status.textContent = 'Your saved connection is still here, but Compass Leads couldn\'t reach Firebase. Check your signal and tap Connect to retry.';
+    document.getElementById('setupGate').style.display = 'block';
+  }
 })();
 </script>
 </body>

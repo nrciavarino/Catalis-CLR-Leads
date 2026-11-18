@@ -297,6 +297,14 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.13.8** — iPhone repeatedly asked for the Firebase config (reported by a rep)
+  - Added: **Or paste a setup link** on the connect screen. An iPhone home-screen app keeps its own
+    storage, separate from Safari, so a setup link opened in Safari never reaches the installed
+    app; the rep can now paste the link into the app itself. Setup links with the API key work too.
+  - Fixed: if the app had a saved config but couldn't connect at launch (weak signal, Firebase
+    hiccup), it showed the blank connect screen as if nothing was saved. It now pre-fills the saved
+    config and says the connection is saved but unreachable, so a retry is one tap.
+  - Added: the app asks the browser to keep its saved settings (`storage.persist()`), best effort.
 - **v1.13.7** — remove an uploaded attendee list
   - Added: **Remove entire attendee list** button on the Attendees tab (shown only when a list
     exists). Until now the only way to undo a wrong upload was ✕ on every row, and CSV uploads *add*

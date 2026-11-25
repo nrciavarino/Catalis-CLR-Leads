@@ -26,7 +26,7 @@ with sync_playwright() as p:
     pg.route('**/*', route)
     pg.goto('file://'+__import__('os').path.abspath('../index.html'))
     pg.wait_for_function("typeof State!=='undefined' && State.db && State.events.length>0", timeout=8000)
-    ok('app boots at v1.14.0', pg.evaluate("APP_VERSION")=='v1.14.0')
+    ok('app boots at v1.14.5', pg.evaluate("APP_VERSION")=='v1.14.5')
 
     # ---- Stage 1: partial-contact web search ----
     pg.evaluate("openReview({name:'Pat Jones',company:'Lee County',title:'Clerk',email:'pat@lee.gov',phone:'',notes:'',source:'manual'}, 'k1')")
@@ -46,7 +46,7 @@ with sync_playwright() as p:
     pg.evaluate("closeReview()")
 
     # ---- Regression: event with no questions ----
-    pg.evaluate("openReview({name:'Plain Lead',email:'a@b.gov',phone:'1',source:'manual'})")
+    pg.evaluate("openReview({name:'Plain Lead',email:'a@b.gov',phone:'555-010-0100',source:'manual'})")
     ok('R no qual area for event without questions', pg.inner_html('#qualArea')=='')
     pg.click('#btnSaveLead'); pg.wait_for_timeout(200)
     leads = [v for k,v in pg.evaluate("[...window.__store.entries()]") if k.startswith('events/ev1/leads/')] if False else None
@@ -68,7 +68,7 @@ with sync_playwright() as p:
     pg.locator('#evNotesList button:has-text("Delete")').first.click(); pg.wait_for_timeout(200)
     ok('S2 delete own note', pg.evaluate("[...window.__store.keys()].filter(k=>k.includes('/notes/')).length")==1)
     pg.evaluate("window.__store.set('events/ev1/notes/other',{text:'Someone else',tag:'',author:'Sam',createdAt:5})"); pg.evaluate("openEventDetail('ev1')"); pg.wait_for_timeout(100)
-    ok('S2 no delete button on others notes', pg.locator('#evNotesList .card:has-text("Someone else") button').count()==0)
+    ok('S2 no delete button on others notes', pg.locator('#evNotesList .card:has-text("Someone else") button:has-text("Delete")').count()==0)
     prompt = pg.evaluate("fetchEventNotes('ev1').then(n=>buildReadoutPrompt([{name:'A',company:'B'}], n))")
     ok('S2 notes flow into readout prompt', 'Someone else' in prompt and 'Event-level notes' in prompt)
 
@@ -99,7 +99,7 @@ with sync_playwright() as p:
 
     # ---- lead form with questions ----
     pg.evaluate("switchTab('scan')")
-    pg.evaluate("openReview({name:'Dana Cole',company:'Mesa County',title:'Director',email:'d@mesa.gov',phone:'555',source:'manual'})")
+    pg.evaluate("openReview({name:'Dana Cole',company:'Mesa County',title:'Director',email:'d@mesa.gov',phone:'555-010-0100',source:'manual'})")
     ok('S3 form renders 4 active questions (archived hidden)', pg.locator('#qualArea [data-qid]').count()==4)
     ok('S3 required marker on required', '*' in pg.inner_text('#qualArea [data-qid] >> nth=0'))
     pg.click('#btnSaveLead'); pg.wait_for_timeout(150)
@@ -148,9 +148,107 @@ with sync_playwright() as p:
 
     # ---- switching to event with different questions ----
     pg.evaluate("setActiveEvent('ev0')"); pg.wait_for_timeout(200)
-    pg.evaluate("openReview({name:'Zed',email:'z@z.gov',phone:'1',source:'manual'})")
+    pg.evaluate("openReview({name:'Zed',email:'z@z.gov',phone:'555-010-0100',source:'manual'})")
     ok('Active-event switch swaps question set', pg.locator('#qualArea [data-qid]').count()==1 and 'budget cycle' in pg.inner_text('#qualArea').lower())
     pg.evaluate("closeReview()")
+
+    # ---- v1.14.5 additions ----
+    pg.evaluate("setActiveEvent('ev1')"); pg.wait_for_timeout(200)
+    pg.evaluate("openEventDetail('ev1')"); pg.wait_for_timeout(150)
+    own = pg.evaluate("State.eventNotes.find(n=>n.author==='Nic').id")
+    pg.evaluate(f"editEventNote('{own}')")
+    pg.fill('#evNoteEditText','Booth 412, Hall B. Power drop is limited. UPDATE: bring a 25ft extension cord.')
+    pg.click('#evNotesList button:has-text("Save")'); pg.wait_for_timeout(200)
+    ok('N edit own note saves new text + marks edited', 'extension cord' in pg.inner_text('#evNotesList') and 'edited' in pg.inner_text('#evNotesList'))
+    ok('N edit keeps one copy (no duplicate)', pg.evaluate("[...window.__store.keys()].filter(k=>k.includes('/notes/')).length")==2)
+    pg.evaluate(f"editEventNote('{own}')"); pg.fill('#evNoteEditText','   '); pg.click('#evNotesList button:has-text("Save")')
+    ok('N blank edit rejected', 'extension cord' in pg.evaluate("window.__store.get('events/ev1/notes/'+'%s').text" % own))
+    pg.click('#evNotesList button:has-text("Cancel")')
+    ok('N Edit offered on others notes, Delete is not', pg.locator('#evNotesList .card:has-text("Someone else") button:has-text("Edit")').count()==1 and pg.locator('#evNotesList .card:has-text("Someone else") button:has-text("Delete")').count()==0)
+    pg.locator('#evNotesList .card:has-text("Someone else") button:has-text("Edit")').click(); pg.fill('#evNoteEditText','Someone else (clarified by Nic)'); pg.click('#evNotesList button:has-text("Save")'); pg.wait_for_timeout(200)
+    ok('N editing another rep note records editor', 'edited by Nic' in pg.inner_text('#evNotesList') and 'clarified' in pg.inner_text('#evNotesList'))
+    pg.evaluate("closeEventDetail()")
+    # alphabetical pick-lists
+    pg.evaluate("State.competitors=['Zeta Co','alpha Inc','Beta LLC']; renderSoftwareSelectOptions()")
+    opts = pg.evaluate("[...document.querySelectorAll('#f_software option')].map(o=>o.textContent)")
+    ok('A competitor list alphabetical helper', pg.evaluate("alphaSort(['Zeta','alpha','Beta']).join()")=='alpha,Beta,Zeta')
+    # attendees default order + bottom save
+    pg.evaluate("switchTab('attendees')")
+    ok('B bottom Save hidden with no attendees', pg.evaluate("document.getElementById('btnSaveAttendeesBottom').style.display")=='none')
+    pg.evaluate("(async()=>{const c=State.db.collection('events').doc('ev1').collection('attendees'); for(const [f,l] of [['Zed','Young'],['Amy','Adams'],['Bo','adams'],['Cy','Miller']]) await c.add({firstName:f,lastName:l,company:'X'});})()"); pg.wait_for_timeout(300)
+    ok('B bottom Save shows once records exist', pg.evaluate("document.getElementById('btnSaveAttendeesBottom').style.display")=='')
+    names = pg.evaluate("[...document.querySelectorAll('#attendeeTbody tr')].map(r=>r.querySelectorAll('input')[1].value)")
+    ok('A attendees default to last-name order', names==['Adams','adams','Miller','Young'], names)
+    # leads list order + toggle
+    pg.evaluate("(async()=>{const c=State.db.collection('events').doc('ev1').collection('leads'); await c.add({name:'Zoe Baker',email:'z@z.gov',phone:'555-010-0100',savedAt:Date.now()+5000}); await c.add({name:'Al Adams',email:'a@a.gov',phone:'555-010-0100',savedAt:1});})()"); pg.wait_for_timeout(300)
+    pg.evaluate("switchTab('leads')")
+    order = pg.evaluate("[...document.querySelectorAll('.lead-item .name')].map(e=>e.textContent)")
+    ok('A leads default A-Z by last name', order.index('Al Adams') < order.index('Zoe Baker') and order[0]=='Al Adams', order)
+    pg.select_option('#leadSortSel','recent')
+    order2 = pg.evaluate("[...document.querySelectorAll('.lead-item .name')].map(e=>e.textContent)")
+    ok('A leads toggle to newest first', order2[0]=='Zoe Baker', order2)
+
+    # ---- v1.14.5: title from differently-labelled attendee column ----
+    def title_key(labels):
+        return pg.evaluate("(l)=>{State.attendeeColumns=CANONICAL_COLS.concat(l.map(x=>({key:x.toLowerCase().replace(/[^a-z0-9]+/g,'_'),label:x})));return attendeeTitleKey();}", labels)
+    ok('T "Employment Title" recognised', title_key(['City Name','Employment Title'])=='employment_title')
+    ok('T "Job Title" / "Position" / "Role" recognised', title_key(['Job Title'])=='job_title' and title_key(['Position'])=='position' and title_key(['Role'])=='role')
+    ok('T plain "Title" beats looser matches', title_key(['Role','Title'])=='title')
+    ok('T salutation-style Title column ignored', title_key(['Salutation Title','State']) is None)
+    ok('T no false hit on "Controller"/"Hotel"', title_key(['Controller','Hotel Needed']) is None)
+    pg.evaluate("State.attendeeColumns=CANONICAL_COLS.concat([{key:'employment_title',label:'Employment Title'}]); State.attendees=[{id:'x1',firstName:'Patricia',lastName:'Moore',company:'Washington County Circuit Court',email:'',phone:'',employment_title:'Clerk of Court'}]; renderAttendeeTable()")
+    pg.evaluate("addAttendeeToLeads('x1')")
+    ok('T green button brings the title in', pg.input_value('#f_title')=='Clerk of Court')
+    pg.evaluate("closeReview()")
+    pg.evaluate("openReview({name:'Patricia Moore',company:'',title:'',email:'',phone:'',source:'qr'})")
+    ok('T scan/manual exact match fills title', pg.input_value('#f_title')=='Clerk of Court' and pg.input_value('#f_company')!='')
+    ok('T match chip shows the title', 'Clerk of Court' in pg.inner_text('#matchArea'))
+    pg.evaluate("closeReview()")
+    pg.evaluate("openReview({name:'Patricia Moore',company:'',title:'County Clerk',email:'',phone:'',source:'qr'})")
+    ok('T badge title is never overwritten', pg.input_value('#f_title')=='County Clerk')
+    pg.evaluate("closeReview()")
+
+    # ---- v1.14.5: QA findings ----
+    pg.evaluate("setActiveEvent('ev1')"); pg.wait_for_timeout(200); pg.evaluate("switchTab('scan')")
+    pg.click("text=+ Enter a lead manually"); pg.wait_for_timeout(150)
+    ok('Q1 manual entry is labelled manual', pg.inner_text('#f_source')=='Source: manual entry')
+    # validators
+    V = lambda fn,v: pg.evaluate(f"{fn}({json.dumps(v)})")
+    ok('Q3 valid emails accepted', all(V('isValidEmail',v) for v in ['a@b.gov','first.last+tag@sub.county.us.gov']))
+    ok('Q3 invalid emails rejected', not any(V('isValidEmail',v) for v in ['not-an-email','a@b','@x.com','a b@c.com','']))
+    ok('Q3 valid phones accepted', all(V('isValidPhone',v) for v in ['(555) 010-0100','+1 555-010-0100','555.010.0100 x12','5550100']))
+    ok('Q3 invalid phones rejected', not any(V('isValidPhone',v) for v in ['abc','12','555-ABCD','']))
+    # save with junk -> warning, nothing saved, then save anyway
+    before = pg.evaluate("[...window.__store.keys()].filter(k=>k.startsWith('events/ev1/leads/')).length")
+    pg.fill('#f_name','Bad Data'); pg.fill('#f_email','not-an-email'); pg.fill('#f_phone','abc'); pg.click('#btnSaveLead'); pg.wait_for_timeout(150)
+    ok('Q3 junk email/phone triggers a warning', pg.locator('#btnContactSaveAnyway').count()==1 and 'look valid' in pg.inner_text('#qualIncompleteBox'))
+    ok('Q3 nothing saved while warning is up', pg.evaluate("[...window.__store.keys()].filter(k=>k.startsWith('events/ev1/leads/')).length")==before)
+    pg.click('#btnContactSaveAnyway'); pg.wait_for_timeout(300)
+    if pg.locator('#btnQualSaveAnyway').count(): pg.click('#btnQualSaveAnyway'); pg.wait_for_timeout(300)  # ev1 also has a required question from earlier tests
+    ok('Q3 Save anyway still saves', pg.evaluate("[...window.__store.keys()].filter(k=>k.startsWith('events/ev1/leads/')).length")==before+1)
+    pg.evaluate("switchTab('leads')"); pg.wait_for_timeout(100)
+    ok('Q3 junk contact counts as missing contact', pg.locator('.lead-item:has-text("Bad Data") .badge:has-text("No contact")').count()==1)
+    # CSV safety
+    ok('Q3 csvSafe neutralises formulas', pg.evaluate("csvSafe('=cmd|\\' /C calc\\'!A0')").startswith("'=") and pg.evaluate("csvSafe('@SUM(1)')").startswith("'@") and pg.evaluate("csvSafe('-cmd')").startswith("'-"))
+    ok('Q3 csvSafe leaves phones/numbers alone', pg.evaluate("[csvSafe('+1 555-010-0100'),csvSafe('-5'),csvSafe('(555) 010-0100'),csvSafe('Plain')]")==['+1 555-010-0100','-5','(555) 010-0100','Plain'])
+    pg.evaluate("State.db.collection('events').doc('ev1').collection('leads').add({name:'Evil Person',company:'=HYPERLINK(\"http://x\")',email:'bad@',phone:'+1 555-010-0100',notes:'+cmd',savedAt:Date.now()})"); pg.wait_for_timeout(250)
+    with pg.expect_download() as dl3: pg.click('#btnExportCsv')
+    csv3 = open(dl3.value.path()).read()
+    ok('Q3 export neutralises formula in company', "\"'=HYPERLINK" in csv3, csv3[-400:])
+    ok('Q3 export keeps invalid email out of Email, notes it in Description', 'Invalid email: bad@' in csv3)
+    ok('Q3 export keeps a +1 phone intact', '"+1 555-010-0100"' in csv3)
+    # readout
+    pr2 = pg.evaluate("buildReadoutPrompt(allLeadsSorted(), [])")
+    import datetime
+    ok('Q2 readout prompt carries today and the no-invented-year rule', 'Today is' in pr2 and str(datetime.date.today().year) in pr2 and 'Never state a year' in pr2)
+    pg.evaluate("State.lastReadoutPrompt='PROMPT TEXT'; renderReadoutSuccess('hello')")
+    ok('Q2 readout shows its inputs', pg.locator('details.readout-inputs').count()==1 and 'PROMPT TEXT' in pg.inner_text('details.readout-inputs pre') or 'PROMPT TEXT' in pg.evaluate("document.querySelector('details.readout-inputs pre').textContent"))
+    # tab badge
+    lab = pg.evaluate("document.querySelector('.tab-btn[data-tab=\"leads\"]').getAttribute('aria-label')")
+    ok('Q5 Leads tab explains its badge', lab and 'saved' in lab, lab)
+    # self test
+    pg.evaluate("switchTab('setup')"); pg.click('#btnScannerSelfTest'); pg.wait_for_function("document.getElementById('selfTestOut').innerText.includes('Environment')", timeout=8000)
+    ok('Q4 scanner self-test runs and reports', 'Secure page' in pg.inner_text('#selfTestOut') and pg.locator('#btnSelfTestCopy').is_visible())
     b.close()
 bad=[r for r in results if not r[1]]
 print(f"\n{len(results)-len(bad)}/{len(results)} passed"); print('errors:', [e for e in errs if 'net::ERR' not in e and 'Failed to load resource' not in e][:8])

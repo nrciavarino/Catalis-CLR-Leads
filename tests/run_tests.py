@@ -26,7 +26,7 @@ with sync_playwright() as p:
     pg.route('**/*', route)
     pg.goto('file://'+__import__('os').path.abspath('../index.html'))
     pg.wait_for_function("typeof State!=='undefined' && State.db && State.events.length>0", timeout=8000)
-    ok('app boots at v1.15.2', pg.evaluate("APP_VERSION")=='v1.15.2')
+    ok('app boots at v1.15.3', pg.evaluate("APP_VERSION")=='v1.15.3')
 
     # ---- Stage 1: partial-contact web search ----
     pg.evaluate("openReview({name:'Pat Jones',company:'Lee County',title:'Clerk',email:'pat@lee.gov',phone:'',notes:'',source:'manual'}, 'k1')")
@@ -210,7 +210,7 @@ with sync_playwright() as p:
 
     # ---- v1.15.0: QA findings ----
     pg.evaluate("setActiveEvent('ev1')"); pg.wait_for_timeout(200); pg.evaluate("switchTab('scan')")
-    pg.click("text=+ Enter a lead manually"); pg.wait_for_timeout(150)
+    pg.click("text=+ Enter manually"); pg.wait_for_timeout(150)
     ok('Q1 manual entry is labelled manual', pg.inner_text('#f_source')=='Source: manual entry')
     # validators
     V = lambda fn,v: pg.evaluate(f"{fn}({json.dumps(v)})")
@@ -355,6 +355,70 @@ with sync_playwright() as p:
         pg.evaluate(act); pg.wait_for_timeout(250); clipped += pg.evaluate(AUDIT)
     ok('H8 no single-line hint is clipped on any main screen at 360px', clipped == [], str(clipped))
     pg.evaluate("localStorage.removeItem('compassleads.apiKey')")
+    pg.set_viewport_size({'width': 390, 'height': 844})
+
+    # ---- v1.15.3: scan layout, delete question, attendees, events, csv, checkbox, slider, beep note ----
+    pg.set_viewport_size({'width': 360, 'height': 780})
+    pg.evaluate("setActiveEvent('ev1')"); pg.wait_for_timeout(250)
+    pg.evaluate("switchTab('scan')"); pg.wait_for_timeout(600)
+    ok('V1 manual-entry button sits in the same row as the photo button',
+       pg.evaluate("document.getElementById('btnManualAdd').parentElement === document.getElementById('btnTakePhoto').parentElement"))
+    vis = pg.evaluate("""(()=>{const b=document.getElementById('btnManualAdd').getBoundingClientRect(), t=document.getElementById('tabbar').getBoundingClientRect(); return [Math.round(b.bottom), Math.round(t.top), Math.round(b.left), Math.round(b.right)];})()""")
+    ok('V2 manual-entry button is on screen without scrolling (360x780)', vis[0] <= vis[1] and vis[2] >= 0 and vis[3] <= 360, str(vis))
+    pg.click('#btnManualAdd'); pg.wait_for_timeout(250)
+    ok('V3 manual-entry button opens a blank lead form', pg.evaluate("document.getElementById('view-review').classList.contains('active')") and pg.evaluate("document.getElementById('f_name').value") == '')
+    pg.evaluate("closeReview()")
+
+    # delete a qualification question only when nobody answered it
+    pg.evaluate("""(async()=>{const db=State.db; await db.collection('events').doc('evdel').set({name:'Del test',createdAt:5,qualFields:[
+        {id:'qa',label:'Answered one',type:'text',options:[],required:false,archived:false},
+        {id:'qb',label:'Unused one',type:'text',options:[],required:false,archived:false}]});
+      await db.collection('events').doc('evdel').collection('leads').doc('x1').set({name:'X',qual:{qa:'hello'}});})()""")
+    pg.wait_for_timeout(400)
+    pg.evaluate("openEventDetail('evdel')"); pg.wait_for_timeout(300)
+    ok('V4 every question has a Delete button', pg.locator("#qualBuilderList button:has-text('Delete')").count() == 2)
+    pg.evaluate("window.__confirms=0; window.confirm=()=>{window.__confirms++; return true;}; 0")
+    pg.evaluate("qfDelete('qa')"); pg.wait_for_timeout(400)
+    names = pg.evaluate("detailQualFields().map(f=>f.id)")
+    ok('V5 a question with an answer is NOT deleted and no confirm is shown', names == ['qa','qb'] and pg.evaluate("window.__confirms") == 0, str(names))
+    pg.evaluate("qfDelete('qb')"); pg.wait_for_timeout(500)
+    names = pg.evaluate("detailQualFields().map(f=>f.id)")
+    ok('V6 an unanswered question is deleted after confirming', names == ['qa'] and pg.evaluate("window.__confirms") == 1, str(names))
+    pg.evaluate("window.confirm=()=>false; 0")
+    pg.evaluate("(async()=>{await State.db.collection('events').doc('evdel').set({name:'Del test',createdAt:5,qualFields:[{id:'qc',label:'Keep me',type:'text',options:[],required:false,archived:false}]});})()"); pg.wait_for_timeout(300)
+    pg.evaluate("qfDelete('qc')"); pg.wait_for_timeout(400)
+    ok('V7 declining the confirmation keeps the question', pg.evaluate("detailQualFields().map(f=>f.id)") == ['qc'])
+    pg.evaluate("closeEventDetail()")
+
+    # attendees: both row buttons fit inside their cell
+    pg.set_viewport_size({'width': 360, 'height': 780})
+    pg.evaluate("switchTab('attendees')"); pg.wait_for_timeout(500)
+    fit = pg.evaluate("""(()=>{const td=document.querySelector('#attendeeTbody tr td:last-child'); if(!td) return null; const c=td.getBoundingClientRect(); const bs=[...td.querySelectorAll('button')].map(b=>b.getBoundingClientRect());
+      return bs.every(b=>b.right<=c.right-1 && b.left>=c.left) ? 'fit' : JSON.stringify([c.left,c.right,bs.map(b=>[b.left,b.right])]);})()""")
+    ok('V8 attendee row buttons are not clipped by their column', fit == 'fit', str(fit))
+
+    # events: every card uses the same button grid
+    pg.evaluate("switchTab('events')"); pg.wait_for_timeout(400)
+    grid = pg.evaluate("""(()=>{const out=[]; document.querySelectorAll('#eventsListWrap .ev-actions').forEach(g=>{const w=[...g.children].map(c=>Math.round(c.getBoundingClientRect().width)); out.push(Math.max(...w)-Math.min(...w));}); return out;})()""")
+    ok('V9 event cards use an even button grid', len(grid) >= 2 and max(grid) <= 2, str(grid))
+
+    # csv: native chooser hidden, button still opens it
+    pg.evaluate("switchTab('attendees')"); pg.wait_for_timeout(300)
+    ok('V10 native file input is hidden', pg.evaluate("getComputedStyle(document.getElementById('attendeeCsvInput')).display") == 'none')
+    with pg.expect_file_chooser() as fc:
+        pg.click("text=Upload CSV")
+    ok('V11 Upload CSV button still opens the file chooser', fc.value is not None)
+
+    # setup: checkbox colour, slider, beep note
+    pg.evaluate("switchTab('setup')"); pg.wait_for_timeout(300)
+    ok('V12 checkboxes use the Catalis teal', pg.evaluate("getComputedStyle(document.getElementById('fbHaptic')).accentColor") == 'rgb(31, 122, 111)')
+    pg.evaluate("(()=>{const s=document.getElementById('textScaleSlider'); s.value='130'; s.dispatchEvent(new Event('input'));})()")
+    fill = pg.evaluate("document.getElementById('textScaleSlider').style.getPropertyValue('--fill')")
+    ok('V13 slider fill follows the value (130% -> 50%)', fill.startswith('50'), fill)
+    ok('V14 slider uses the custom (non-native) look', pg.evaluate("getComputedStyle(document.getElementById('textScaleSlider')).appearance") == 'none')
+    ok('V15 beep note is hidden on non-iPhone', pg.evaluate("document.getElementById('fbSoundNote').textContent") == '')
+    pg.evaluate("Object.defineProperty(navigator,'userAgent',{get:()=>'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',configurable:true}); renderBeepNote()")
+    ok('V16 beep note shows on iPhone', 'iPhone' in pg.evaluate("document.getElementById('fbSoundNote').textContent"))
     pg.set_viewport_size({'width': 390, 'height': 844})
     b.close()
 bad=[r for r in results if not r[1]]

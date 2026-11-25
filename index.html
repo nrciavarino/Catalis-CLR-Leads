@@ -690,7 +690,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.15.0'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.15.1'; // bump this on every shipped change so it's obvious whether a device is up to date
 const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
@@ -2194,6 +2194,7 @@ function readoutDateContext(leads){
   lines.push('DATES: use only the dates and years stated in this message. If a date in the notes has no year (for example "Mon 12/7"), take the year in which that weekday and date match and that is closest to today; if you cannot tell, leave the year out. Never state a year that is not supported here.');
   return lines.join('\n');
 }
+const READOUT_ITEM_CAP = 100; // max individual lead notes (and free-text answers per question) sent to the readout prompt
 function buildReadoutPrompt(leads, eventNotes){
   const evName = (State.events.find(e=>e.id===State.activeEventId)||{}).name || 'this event';
   const byCompany = {};
@@ -2211,8 +2212,15 @@ function buildReadoutPrompt(leads, eventNotes){
   // no reason to ship every lead's full contact info to the API for this, so
   // only name/company/note/reason go along, and only for leads that actually
   // have a note (capped so a huge event doesn't blow past a reasonable request size).
-  const notable = leads.filter(l => l.notes && l.notes.trim()).slice(0, 40)
-    .map(l => `- ${l.name||'(no name)'}${l.company?' ('+l.company+')':''}: "${l.notes.trim()}"${l.reasonForEngagement?' [reason: '+l.reasonForEngagement+']':''}`);
+  const withNotes = leads.filter(l => l.notes && l.notes.trim());
+  // Most detailed notes first (longest), newest breaking ties, so a big event's
+  // readout isn't just the last 100 notes captured.
+  const rankedNotes = withNotes.slice().sort((a,b) => (b.notes.trim().length - a.notes.trim().length) || ((b.savedAt||0) - (a.savedAt||0)));
+  const notable = rankedNotes.slice(0, READOUT_ITEM_CAP)
+    .map(l => `- ${l.name||'(no name)'}${l.company?' ('+l.company+')':''}: "${l.notes.trim().replace(/\s+/g,' ').slice(0, 400)}"${l.reasonForEngagement?' [reason: '+l.reasonForEngagement+']':''}`);
+  const notableHeading = withNotes.length > READOUT_ITEM_CAP
+    ? `Notable rep notes captured on individual leads (${READOUT_ITEM_CAP} of ${withNotes.length} leads that have notes, most detailed first):`
+    : 'Notable rep notes captured on individual leads:';
   return `You are helping a government-technology sales team (Catalis) write a one-page executive readout of a conference booth's lead-capture results, for internal leadership who did not attend. Be concise, factual, and specific — pull out real patterns and named companies/agencies, don't pad with generic filler. Plain text only: no markdown syntax (no #, *, or **), just clear section headings in plain capital letters or title case followed by a blank line, since this will be displayed as-is without a markdown renderer.
 
 Event: ${evName}
@@ -2228,9 +2236,9 @@ ${Object.entries(byReason).sort((a,b)=>b[1]-a[1]).map(([r,n]) => `- ${r}: ${n}`)
 Current software mentioned:
 ${Object.entries(bySoftware).sort((a,b)=>b[1]-a[1]).map(([s,n]) => `- ${s}: ${n}`).join('\n')}
 
-Notable rep notes captured on individual leads:
+${notableHeading}
 ${notable.length ? notable.join('\n') : '(none captured)'}
-${qualReadoutBlock(leads)}${notesReadoutBlock(eventNotes)}
+${qualReadoutBlock(leads)}${qualTextReadoutBlock(leads)}${notesReadoutBlock(eventNotes)}
 
 Write the readout with these sections: OVERVIEW (2-3 sentences), KEY TAKEAWAYS (3-5 bullet-style lines using a leading dash, not asterisks), NOTABLE CONVERSATIONS (pull from the rep notes above where there's real substance), COMPETITIVE SIGNALS (what current software came up and what it suggests), RECOMMENDED FOLLOW-UPS (concrete, named where possible). Keep the whole thing to roughly 300-450 words.`;
 }
@@ -3423,6 +3431,20 @@ function qualReadoutBlock(leads){
   });
   return `\nQualification question answers (event-specific questions reps asked):\n${lines.join('\n')}\n`;
 }
+function qualTextReadoutBlock(leads){
+  const fields = activeQualFields().filter(f => f.type === 'text');
+  const blocks = [];
+  fields.forEach(f => {
+    const answered = leads.filter(l => isAnswered((l.qual||{})[f.id]));
+    if(!answered.length) return;
+    answered.sort((a,b) => String((b.qual||{})[f.id]).trim().length - String((a.qual||{})[f.id]).trim().length || ((b.savedAt||0) - (a.savedAt||0)));
+    const lines = answered.slice(0, READOUT_ITEM_CAP).map(l =>
+      `- ${l.name||'(no name)'}${l.company?' ('+l.company+')':''}: "${String((l.qual||{})[f.id]).trim().replace(/\s+/g,' ').slice(0, 300)}"`);
+    const shown = answered.length > READOUT_ITEM_CAP ? `, showing the ${READOUT_ITEM_CAP} most detailed` : '';
+    blocks.push(`- "${f.label}" (${answered.length} answered${shown}):\n${lines.join('\n')}`);
+  });
+  return blocks.length ? `\nFree-text answers to event-specific questions:\n${blocks.join('\n')}\n` : '';
+}
 function notesReadoutBlock(notes){
   if(!notes || !notes.length) return '';
   const lines = notes.slice(0, 30).map(n => `- ${n.tag ? '['+n.tag+'] ' : ''}${String(n.text||'').slice(0, 400)}`);
@@ -3639,8 +3661,6 @@ document.getElementById('btnScannerSelfTest').onclick = async () => {
       canvas = holder.querySelector('canvas');
       if(!canvas){ const img = holder.querySelector('img'); if(img){ canvas = document.createElement('canvas'); canvas.width = canvas.height = 256; canvas.getContext('2d').drawImage(img,0,0,256,256); } }
       holder.remove();
-      // The generator draws no quiet zone; native detectors (Android) need one. Pad with white.
-      if(canvas){ const pad = document.createElement('canvas'); pad.width = pad.height = 352; const pc = pad.getContext('2d'); pc.fillStyle = '#fff'; pc.fillRect(0,0,352,352); pc.drawImage(canvas, 48, 48, 256, 256); canvas = pad; }
     }catch(e){ add(false, 'Generate a test QR code', e.message); }
     if(canvas){
       try{

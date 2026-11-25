@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.15.0` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.15.1` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -304,6 +304,17 @@ manually replace `index.html` on the host.
   them), that's worth knowing before turning this on, not after.
 
 ## Changelog
+
+- **v1.15.1** — event readout covers more of a big event
+  - Changed: the readout now includes up to **100** lead notes (was 40). When more than 100 leads
+    have notes, it sends the **most detailed (longest) notes first**, newest breaking ties, instead
+    of whichever 40 came first, and tells the model how many of how many it is showing. Each note
+    is cut to 400 characters. Counts and breakdowns still cover every lead.
+  - Added: **free-text qualification answers** now go into the readout (up to 100 per question,
+    longest first, each cut to 300 characters, with the lead's name and company). Single choice,
+    multiple choice and Yes/No answers were already tallied. Emails and phone numbers are still
+    never sent. The "What this readout was based on" section shows all of it.
+  - No firestore.rules change and no new indexes.
 
 - **v1.15.0** — phone ergonomics
   - Added: **Pinned Save lead bar** on the review/edit screen so Save stays reachable on long forms.
@@ -681,8 +692,9 @@ manually replace `index.html` on the host.
   tools (or just reads the source) can bypass it. It protects against fumbling, not a
   determined person.
 - The event readout (v1.12.0) sends an aggregated summary of the current event's leads —
-  company/reason/software breakdowns plus up to 40 leads' notes (name, company, and the note
-  text) — to the Anthropic API to generate the write-up. It does not send every lead's full
+  company/reason/software breakdowns plus up to 100 leads' notes (name, company, and the note
+  text; the most detailed notes are chosen first) and the free-text qualification answers
+  (up to 100 per question, name and company with each) — to the Anthropic API to generate the write-up. It does not send every lead's full
   contact info, but it isn't a fully anonymized aggregate either; anyone comfortable with the
   existing photo-OCR feature sending badge photos to the same API should find this consistent
   with that.

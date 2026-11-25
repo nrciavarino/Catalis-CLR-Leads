@@ -2916,8 +2916,16 @@ function performWebContactSearch(){
   }).catch(err => {
     if(State.pendingLead !== targetLead) return;
     console.error(err);
-    btn.disabled = false; btn.textContent = 'Search the web for contact info';
-    status.textContent = 'Search failed — check connection/API key and try again.';
+    recordAiError('web contact search', err); // shows under Setup → API key, so a failure isn't a mystery
+    btn.disabled = false;
+    btn.textContent = 'Search the web for ' + (wantEmail && wantPhone ? 'contact info' : (wantEmail ? 'an email' : 'a phone number'));
+    const st = err && err.status;
+    const hint = st === 401 || st === 403 ? 'the API key was rejected — re-enter it under Setup'
+      : st === 429 ? 'rate-limited — wait a minute and retry'
+      : st === 400 || st === 404 ? 'Anthropic refused the request — web search may not be enabled for this API key\'s organization (Anthropic Console → Settings), or the model name is unavailable'
+      : st >= 500 ? 'Anthropic is busy — try again shortly'
+      : (err instanceof TypeError ? 'can\'t reach Anthropic — check wifi or cellular' : String((err && err.message) || err).slice(0, 140));
+    status.textContent = 'Search failed' + (st ? ' (' + st + ')' : '') + ' — ' + hint + '.';
   });
 }
 async function searchWebForContact(name, company, title, wantEmail=true, wantPhone=true){
@@ -2946,7 +2954,7 @@ async function searchWebForContact(name, company, title, wantEmail=true, wantPho
       }]
     })
   });
-  if(!resp.ok){ const t = await resp.text().catch(()=>''); throw new Error('API error '+resp.status+' '+t.slice(0,200)); }
+  if(!resp.ok){ const t = await resp.text().catch(()=>''); throw aiHttpError(resp, t); }
   const data = await resp.json();
   const textBlocks = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text);
   if(!textBlocks.length) throw new Error('No text in response');

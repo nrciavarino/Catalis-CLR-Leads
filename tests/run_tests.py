@@ -26,7 +26,7 @@ with sync_playwright() as p:
     pg.route('**/*', route)
     pg.goto('file://'+__import__('os').path.abspath('../index.html'))
     pg.wait_for_function("typeof State!=='undefined' && State.db && State.events.length>0", timeout=8000)
-    ok('app boots at v1.15.0', pg.evaluate("APP_VERSION")=='v1.15.0')
+    ok('app boots at v1.15.1', pg.evaluate("APP_VERSION")=='v1.15.1')
 
     # ---- Stage 1: partial-contact web search ----
     pg.evaluate("openReview({name:'Pat Jones',company:'Lee County',title:'Clerk',email:'pat@lee.gov',phone:'',notes:'',source:'manual'}, 'k1')")
@@ -300,6 +300,24 @@ with sync_playwright() as p:
     ok('6 readout has a Share button', pg.locator('#btnReadoutShare').count()==1)
     pg.evaluate("document.getElementById('btnReadoutShare').click()"); pg.wait_for_timeout(150)
     ok('6 readout share sends the text', pg.evaluate("window.__shared.length")==1 and 'Readout body' in pg.evaluate("window.__shared[0].text"))
+
+    # ---- readout caps and prioritization (v1.15.1) ----
+    rp = pg.evaluate("""(()=>{
+      const orig = activeQualFields;
+      activeQualFields = () => [{id:'t1',label:'Timeline notes',type:'text'}];
+      const leads = [];
+      for(let i=0;i<120;i++) leads.push({name:'L'+i, company:'C'+i, notes:'n'.repeat(i+1)+' end'+i, savedAt:i, qual:{t1: i%2? 'ans'+'x'.repeat(i)+'_'+i : ''}});
+      leads.push({name:'Longest', company:'Big', notes:'q'.repeat(900), savedAt:0});
+      const out = buildReadoutPrompt(leads, []);
+      activeQualFields = orig;
+      return out;
+    })()""")
+    ok('R1 readout sends 100 notes, with how-many-of-how-many', '100 of 121 leads that have notes' in rp)
+    ok('R2 longest note chosen first and cut to 400 chars', '- Longest (Big): "' + 'q'*400 + '"' in rp and 'q'*401 not in rp)
+    ok('R3 shortest notes dropped when over cap', '(C0)' not in rp.split('Free-text answers')[0])
+    ok('R4 free-text answers included and capped', 'Free-text answers to event-specific questions' in rp and '"Timeline notes" (60 answered)' in rp)
+    rp2 = pg.evaluate("buildReadoutPrompt([{name:'A',company:'B',notes:'short note'}], [])")
+    ok('R5 under the cap keeps the plain heading', 'Notable rep notes captured on individual leads:' in rp2 and 'Free-text answers' not in rp2)
     b.close()
 bad=[r for r in results if not r[1]]
 print(f"\n{len(results)-len(bad)}/{len(results)} passed"); print('errors:', [e for e in errs if 'net::ERR' not in e and 'Failed to load resource' not in e][:8])

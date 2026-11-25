@@ -26,7 +26,7 @@ with sync_playwright() as p:
     pg.route('**/*', route)
     pg.goto('file://'+__import__('os').path.abspath('../index.html'))
     pg.wait_for_function("typeof State!=='undefined' && State.db && State.events.length>0", timeout=8000)
-    ok('app boots at v1.15.1', pg.evaluate("APP_VERSION")=='v1.15.1')
+    ok('app boots at v1.15.2', pg.evaluate("APP_VERSION")=='v1.15.2')
 
     # ---- Stage 1: partial-contact web search ----
     pg.evaluate("openReview({name:'Pat Jones',company:'Lee County',title:'Clerk',email:'pat@lee.gov',phone:'',notes:'',source:'manual'}, 'k1')")
@@ -318,6 +318,44 @@ with sync_playwright() as p:
     ok('R4 free-text answers included and capped', 'Free-text answers to event-specific questions' in rp and '"Timeline notes" (60 answered)' in rp)
     rp2 = pg.evaluate("buildReadoutPrompt([{name:'A',company:'B',notes:'short note'}], [])")
     ok('R5 under the cap keeps the plain heading', 'Notable rep notes captured on individual leads:' in rp2 and 'Free-text answers' not in rp2)
+
+    # ---- hint text and empty dropdowns (v1.15.2) ----
+    pg.evaluate("openReview({name:'Karrie McDaniel',company:'',title:'',email:'k@x.gov',phone:'',source:'manual'})"); pg.wait_for_timeout(250)
+    pc = pg.evaluate("getComputedStyle(document.getElementById('f_title'),'::placeholder').color")
+    ok('H1 placeholder color is the dimmer #8A9BAC', pc == 'rgb(138, 155, 172)', pc)
+    ok('H2 entered text stays dark ink', pg.evaluate("getComputedStyle(document.getElementById('f_email')).color") == 'rgb(20, 40, 68)')
+    sel = pg.evaluate("""(()=>{const s=document.getElementById('f_reason'); const o=[...s.options]; if(!o.some(x=>x.value==='Zed')) s.add(new Option('Zed','Zed'));
+      s.value=''; const empty=[getComputedStyle(s).color,getComputedStyle(s).fontStyle]; s.value='Zed'; const full=[getComputedStyle(s).color,getComputedStyle(s).fontStyle];
+      const optc=getComputedStyle(s.options[0]).color; s.value=''; return {empty,full,optc};})()""")
+    ok('H3 empty dropdown is dim italic', sel['empty'] == ['rgb(138, 155, 172)','italic'], str(sel))
+    ok('H4 chosen dropdown value is normal ink', sel['full'] == ['rgb(20, 40, 68)','normal'], str(sel))
+    ok('H5 dropdown option text itself stays normal ink', sel['optc'] == 'rgb(20, 40, 68)', str(sel))
+    ok('H6 company/title hints keep their full example text', pg.evaluate("[f_company.placeholder,f_title.placeholder]") == ['County Probation Dept.','Program Director'])
+    for w in (390, 360):
+        pg.set_viewport_size({'width': w, 'height': 844}); pg.wait_for_timeout(200)
+        clip = pg.evaluate("""(()=>{const out=[]; const c=document.createElement('canvas').getContext('2d');
+          ['f_name','f_company','f_title','f_email','f_phone'].forEach(id=>{const e=document.getElementById(id); const cs=getComputedStyle(e);
+            c.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+            const avail=e.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+            if(e.clientWidth>0 && c.measureText(e.placeholder).width>avail) out.push(id);}); return out;})()""")
+        ok(f'H7 review-form hints fit without clipping at {w}px wide', clip == [], str(clip))
+    pg.set_viewport_size({'width': 390, 'height': 844})
+    pg.evaluate("closeReview()")
+
+    # ---- no single-line hint is clipped on the main screens, 360px phone, saved-key state included (v1.15.2) ----
+    pg.set_viewport_size({'width': 360, 'height': 844})
+    pg.evaluate("localStorage.setItem('compassleads.apiKey','sk-ant-test-key-1234567890')")
+    AUDIT = """(()=>{const out=[];const c=document.createElement('canvas').getContext('2d');
+      document.querySelectorAll('input[placeholder]').forEach(e=>{ if(!e.placeholder||e.offsetWidth===0) return; const cs=getComputedStyle(e);
+        c.font=cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+        const avail=e.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+        if(c.measureText(e.placeholder).width>avail) out.push(e.id);}); return out;})()"""
+    clipped = []
+    for act in ["switchTab('leads')","switchTab('attendees')","switchTab('events')","switchTab('setup')","openReview({name:'',company:'',title:'',email:'',phone:'',source:'manual'})","closeReview(); openEventDetail(State.events[0].id)"]:
+        pg.evaluate(act); pg.wait_for_timeout(250); clipped += pg.evaluate(AUDIT)
+    ok('H8 no single-line hint is clipped on any main screen at 360px', clipped == [], str(clipped))
+    pg.evaluate("localStorage.removeItem('compassleads.apiKey')")
+    pg.set_viewport_size({'width': 390, 'height': 844})
     b.close()
 bad=[r for r in results if not r[1]]
 print(f"\n{len(results)-len(bad)}/{len(results)} passed"); print('errors:', [e for e in errs if 'net::ERR' not in e and 'Failed to load resource' not in e][:8])

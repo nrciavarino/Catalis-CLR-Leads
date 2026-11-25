@@ -121,6 +121,7 @@ matches what's in this repo before assuming a device is up to date)
 | `test-badges.html`, `test-badges-2.html` | Printable/on-screen-scannable fake badges for testing the scan flow (QR, vCard, barcode, no-code, varied colors/layouts) |
 | `sample-attendees.csv`, `sample-attendees-2.csv` | Sample attendee lists matching the test badges, for exercising attendee-match and dynamic columns |
 | `firestore.rules` | Firestore security rules — requires anonymous auth (see Security notes below); publish this in the Firebase console, don't leave the project on its default test-mode rules |
+| `tests/` | Headless Playwright regression suite (`python3 run_tests.py` from inside `tests/`) with an in-memory Firestore stub — covers the v1.14.0 features plus save/edit/export regressions. It does not exercise the camera, barcode scanning or real iOS behavior; those still need a device check. |
 
 ## Setup
 
@@ -208,11 +209,14 @@ See [Data model](#data-model-firestore) below.
 ## Data model (Firestore)
 
 ```
-events/{eventId}                        { name, createdAt, archived, attendeeColumns: [{key,label}, ...] }
+events/{eventId}                        { name, createdAt, archived, attendeeColumns: [{key,label}, ...],
+                                            qualFields: [{id,label,type,options,required,archived}, ...] }
+events/{eventId}/notes/{noteId}          { text, tag, author, createdAt }
 events/{eventId}/leads/{leadId}          { name, company, title, email, phone, notes,
                                             emailLower, phoneNormalized,
                                             currentSoftware, reasonForEngagement, contactSource,
-                                            source, matched, webSearchAttempted, scannedBy, savedAt }
+                                            source, matched, webSearchAttempted, scannedBy, savedAt,
+                                            qual: { <questionId>: "answer" | ["answers"] } }
 events/{eventId}/attendees/{attendeeId}  { firstName, lastName, company, email, phone, ...any
                                             custom columns from an uploaded CSV }
 meta/shared                              { activeEventId }
@@ -246,6 +250,10 @@ subcollection at once, rather than a separate top-level "contacts" collection �
 restructuring. Collection-group queries need their own rule (`match /{path=**}/leads/{leadId}`,
 which requires `rules_version = '2'`) and collection-group-scoped indexes; the per-path rule on
 `events/{eventId}/leads/{leadId}` does not cover them. See [Setup](#setup) step 7.
+
+`qualFields` (v1.14.0) are the event's qualification questions. `type` is `single`, `multi`, `yesno`
+or `text`. Ids are generated once and never reused, so renaming or archiving a question never
+orphans the answers stored in `lead.qual`. Edits run inside a Firestore transaction.
 
 `contactSource` on a lead is one of `badge`, `attendee-list`, `web-search`, or empty — mainly so
 a web-found contact can be flagged for verification in the CSV export rather than treated as
@@ -297,6 +305,24 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.14.0** — event notes, per-event qualification questions, smarter contact lookup
+  - **Republish `firestore.rules` BEFORE deploying this version.** It adds a rule for the new
+    `events/{id}/notes` subcollection (the deny-all backstop blocks it otherwise) and a size cap
+    on `qualFields`. No new indexes are needed.
+  - Added: **Event notes.** Events tab → **Details** on any event. Short, tagged (Schedule / Venue /
+    Setup / Staffing / Lesson learned), time-stamped, attributed notes — one document each, so two
+    reps adding at once never overwrite each other. A rep can delete only their own notes. Notes
+    are included in the AI event readout.
+  - Added: **Per-event qualification questions.** Same Details screen. Single choice, multiple
+    choice, Yes/No or free text; mark any as required; reorder, rename, edit choices, archive
+    (answers are kept) and copy a set from a previous event. They appear on the lead form. If a
+    required question is unanswered, the rep gets **Save anyway as incomplete** — required is a
+    prompt, not a guarantee, and a phone still on an older version will save without answers. Leads
+    show an **Incomplete** badge and the Leads header counts them. The CSV appends one column per
+    question (plus *Qualification Complete* when any question is required); existing columns and
+    their order are unchanged. The readout gets a per-question breakdown.
+  - Changed: the **web contact search** now appears when *either* email or phone is missing (on new
+    leads and when editing), and asks only for what's missing. It never overwrites a filled field.
 - **v1.13.8** — iPhone repeatedly asked for the Firebase config (reported by a rep)
   - Added: **Or paste a setup link** on the connect screen. An iPhone home-screen app keeps its own
     storage, separate from Safari, so a setup link opened in Safari never reaches the installed

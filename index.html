@@ -158,6 +158,7 @@
 
   .badge{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;}
   .badge-teal{background:var(--teal-pale);color:var(--teal);} .badge-red{background:var(--red-pale);color:var(--red);}
+  .qual-missing{outline:2px solid var(--red);outline-offset:2px;border-radius:8px;}
   .badge-brass{background:var(--brass-light);color:var(--brass-dark);} .badge-gray{background:#E7EEED;color:var(--ink-soft);}
 
   #tabbar{height:calc(var(--tab-h) + env(safe-area-inset-bottom));flex:0 0 auto;background:#fff;border-top:1px solid var(--border);display:flex;position:relative;z-index:20;padding-bottom:env(safe-area-inset-bottom);}
@@ -348,9 +349,11 @@
       <div class="field"><label class="field-label" for="f_software">Current software (ask, don't guess)</label>
         <select id="f_software"><option value="">— not asked / not mentioned —</option></select>
       </div>
+      <div id="qualArea"></div>
       <div class="field"><label class="field-label" for="f_notes">Notes</label><textarea id="f_notes" placeholder="Interested in Benchmark integration…"></textarea></div>
       <div class="hint" id="f_source">Source: manual entry</div>
     </div>
+    <div id="qualIncompleteBox"></div>
     <button class="btn btn-primary btn-block" id="btnSaveLead" style="font-size:16px;padding:14px;">Save lead</button>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="closeReview()">Cancel</button>
   </div>
@@ -361,6 +364,7 @@
     <div class="row wrap" style="margin:8px 0 14px;">
       <span class="badge badge-brass" id="leadCountBadge">0 leads</span>
       <span class="badge badge-red" id="leadMissingBadge" style="display:none;">0 missing contact</span>
+      <span class="badge badge-brass" id="leadIncompleteBadge" style="display:none;">0 incomplete</span>
       <span class="hint" id="lastSyncedLabel" style="margin-left:auto;"></span>
     </div>
     <button class="btn btn-teal btn-block" id="btnExportCsv" style="margin-bottom:14px;">Export Salesforce CSV</button>
@@ -441,6 +445,36 @@
     <div class="card">
       <div class="field"><label class="field-label" for="newEventName">New event name</label><input type="text" id="newEventName" placeholder="APPA 2026 Annual Conference"></div>
       <button class="btn btn-primary btn-block" id="btnAddEvent">+ Add event</button>
+    </div>
+  </div>
+
+  <div class="view" id="view-eventdetail">
+    <button class="btn btn-outline btn-sm" onclick="closeEventDetail()" style="margin-bottom:10px;">‹ Back to events</button>
+    <h2 class="section-title" id="evDetailTitle">Event details</h2>
+    <h3 class="section-title" style="font-size:14px;">Event notes</h3>
+    <div class="card">
+      <div class="hint" style="margin-bottom:8px;">Schedule, venue, setup, staffing, lessons learned. Shared with everyone on the team — don't put personal details about attendees here.</div>
+      <div class="field"><label class="field-label" for="evNoteText">Add a note</label><textarea id="evNoteText" maxlength="2000" placeholder="Booth is in Hall B near the registration desk; power drops are limited…"></textarea></div>
+      <div class="row" style="gap:8px;">
+        <select id="evNoteTag" aria-label="Note tag" style="flex:1;"><option value="">No tag</option><option>Schedule</option><option>Venue</option><option>Setup</option><option>Staffing</option><option>Lesson learned</option></select>
+        <button class="btn btn-primary" id="btnAddEvNote">Add note</button>
+      </div>
+    </div>
+    <div id="evNotesList"></div>
+    <h3 class="section-title" style="font-size:14px;margin-top:18px;">Qualification questions</h3>
+    <div class="card">
+      <div class="hint" style="margin-bottom:8px;">Questions reps answer on every lead for this event. Required questions prompt before saving, but a rep can still save a lead as incomplete. Archiving a question keeps existing answers and exports.</div>
+      <div id="qualBuilderList"></div>
+    </div>
+    <div class="card">
+      <div class="field"><label class="field-label" for="qfLabel">New question</label><input type="text" id="qfLabel" placeholder="Is a budget cycle open this year?"></div>
+      <div class="row" style="gap:8px;margin-bottom:8px;">
+        <select id="qfType" aria-label="Question type" style="flex:1;"><option value="single">Single choice</option><option value="multi">Multiple choice</option><option value="yesno">Yes / No</option><option value="text">Free text</option></select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13.5px;"><input type="checkbox" id="qfRequired"> Required</label>
+      </div>
+      <div class="field" id="qfOptionsWrap"><label class="field-label" for="qfOptions">Choices (one per line or comma-separated)</label><textarea id="qfOptions" placeholder="This quarter&#10;Next fiscal year&#10;No timeline"></textarea></div>
+      <button class="btn btn-primary btn-block" id="btnAddQual">+ Add question</button>
+      <div id="qualCopyWrap" style="margin-top:10px;"></div>
     </div>
   </div>
 
@@ -611,7 +645,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.13.8'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.14.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
@@ -849,6 +883,7 @@ const State = {
   setupUnlocked: false, // session-only (not persisted) — see renderSecurityCard(); a fresh page load always re-locks if a PIN is set
   reviewReturnTab: 'scan', // which tab the review screen returns to on Back/Cancel/Save — set in openReview(), so editing from Leads lands back on Leads
   repCard: safeJSONParse(localStorage.getItem(LS_REP_CARD), null) || {title:'', company:'', email:'', phone:''}, // the rep's own card fields for "share my card" (backlog #8) — name comes from workerName
+  detailEventId: null, unsubNotes: null, eventNotes: [], // event-detail screen (v1.14.0)
   showArchivedEvents: false, // per-tab-open UI toggle (not persisted) — see renderEventsList()
 };
 
@@ -1308,6 +1343,8 @@ function loadEventsAndMeta(){
     State.events = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
     updateEventPill();
     renderEventsList();
+    if(State.detailEventId) renderQualBuilder(); // questions may have just changed (this device or another)
+    renderLeadsList(); // incomplete badges depend on the event's required questions
     refreshAttendeeColumnsFromActiveEvent(); // event doc (and its column defs) may have just arrived/changed
   }, err => console.error('events snapshot error', err));
 
@@ -1370,6 +1407,7 @@ function renderEventsList(){
         ${ev.archived
           ? `<button class="btn btn-outline btn-sm" onclick="unarchiveEvent('${ev.id}')">Unarchive</button>`
           : (ev.id===State.activeEventId ? `<span class="badge badge-teal">Active</span>` : `<button class="btn btn-outline btn-sm" onclick="setActiveEvent('${ev.id}')">Make active</button>`)}
+        <button class="btn btn-outline btn-sm" onclick="openEventDetail('${ev.id}')" aria-label="Event notes and qualification questions">Details</button>
         <button class="btn btn-outline btn-sm" onclick="renameEvent('${ev.id}')" aria-label="Rename event">Rename</button>
         ${!ev.archived ? `<button class="btn btn-outline btn-sm" onclick="archiveEvent('${ev.id}')">Archive</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="deleteEvent('${ev.id}')">Delete</button>
@@ -1868,6 +1906,10 @@ function renderLeadsList(){
   const missingBadge = document.getElementById('leadMissingBadge');
   if(missing>0){ missingBadge.style.display='inline-flex'; missingBadge.textContent = missing + ' missing contact'; }
   else missingBadge.style.display = 'none';
+  const incompleteN = leads.filter(l => leadMissingRequired(l).length).length;
+  const incBadge = document.getElementById('leadIncompleteBadge');
+  if(incompleteN>0){ incBadge.style.display='inline-flex'; incBadge.textContent = incompleteN + ' incomplete'; }
+  else incBadge.style.display = 'none';
   document.getElementById('lastSyncedLabel').textContent = State.lastSync ? ('synced ' + fmtTime(State.lastSync)) : '';
   if(q) leads = leads.filter(l => norm(l.name).includes(q) || norm(l.company).includes(q));
   if(!leads.length){
@@ -1878,9 +1920,10 @@ function renderLeadsList(){
     <div class="lead-item">
       <div class="top">
         <div><div class="name">${esc(l.name)||'(no name)'}</div><div class="meta">${esc(l.company)||''}${l.title? ' · '+esc(l.title):''}</div></div>
-        <div style="text-align:right;">${(!l.email && !l.phone) ? '<span class="badge badge-red">No contact</span>' : (l.matched ? '<span class="badge badge-teal">Matched</span>' : '')}</div>
+        <div style="text-align:right;">${(!l.email && !l.phone) ? '<span class="badge badge-red">No contact</span>' : (l.matched ? '<span class="badge badge-teal">Matched</span>' : '')}${leadMissingRequired(l).length ? ' <span class="badge badge-brass" title="Required qualification questions unanswered">Incomplete</span>' : ''}</div>
       </div>
       <div class="meta" style="margin-top:6px;">${contactLinks(l.email, l.phone)}</div>
+      ${qualSummaryHtml(l)}
       <div class="meta">Scanned by ${esc(l.scannedBy)||'—'} · ${fmtTime(l.savedAt)}${l.reasonForEngagement ? ' · '+esc(l.reasonForEngagement) : ''}${l.currentSoftware ? ' · currently on '+esc(l.currentSoftware) : ''}${l.contactSource==='web-search' ? ' · <span style="color:var(--red);">contact found via web — verify</span>' : (l.webSearchAttempted ? ' · <span style="color:var(--ink-soft);">web search tried — no result</span>' : '')}</div>
       <div class="actions">
         <button class="btn btn-outline btn-sm" onclick="editLead('${l._key}')">Edit</button>
@@ -2022,7 +2065,7 @@ function openReadoutScreen(){
     renderReadoutError();
   });
 }
-function buildReadoutPrompt(leads){
+function buildReadoutPrompt(leads, eventNotes){
   const evName = (State.events.find(e=>e.id===State.activeEventId)||{}).name || 'this event';
   const byCompany = {};
   const byReason = {}; const bySoftware = {};
@@ -2057,11 +2100,16 @@ ${Object.entries(bySoftware).sort((a,b)=>b[1]-a[1]).map(([s,n]) => `- ${s}: ${n}
 
 Notable rep notes captured on individual leads:
 ${notable.length ? notable.join('\n') : '(none captured)'}
+${qualReadoutBlock(leads)}${notesReadoutBlock(eventNotes)}
 
 Write the readout with these sections: OVERVIEW (2-3 sentences), KEY TAKEAWAYS (3-5 bullet-style lines using a leading dash, not asterisks), NOTABLE CONVERSATIONS (pull from the rep notes above where there's real substance), COMPETITIVE SIGNALS (what current software came up and what it suggests), RECOMMENDED FOLLOW-UPS (concrete, named where possible). Keep the whole thing to roughly 300-450 words.`;
 }
 async function generateReadout(leads){
   const apiKey = anthropicKey();
+  // Best-effort: event-level notes (venue, staffing, lessons learned) add context
+  // to the readout, but a failure here must never block generating it.
+  let eventNotes = [];
+  try{ eventNotes = await fetchEventNotes(State.activeEventId); }catch(e){ console.warn('event notes unavailable for readout', e); }
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -2073,7 +2121,7 @@ async function generateReadout(leads){
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
       max_tokens: 1200,
-      messages: [{ role:'user', content: buildReadoutPrompt(leads) }]
+      messages: [{ role:'user', content: buildReadoutPrompt(leads, eventNotes) }]
     })
   });
   if(!resp.ok){
@@ -2201,6 +2249,10 @@ document.getElementById('btnExportCsv').onclick = () => {
   const leads = allLeadsSorted();
   if(!leads.length){ toast('No leads to export yet'); return; }
   const evName = (State.events.find(e=>e.id===State.activeEventId)||{}).name || '';
+  const qCols = exportQualFields(leads);
+  const hasRequired = activeQualFields().some(f => f.required);
+  const usedHeaders = new Set(['First Name','Last Name','Company','Title','Email','Phone','Lead Source','Event','Scanned By','Scanned Date','Matched Attendee List','Reason for Engagement','Current Software','Contact Source','Description','Qualification Complete']);
+  const qHeaders = qCols.map(f => { let h = f.label || 'Question'; while(usedHeaders.has(h)) h += ' (Qualification)'; usedHeaders.add(h); return h; });
   const rows = leads.map(l => {
     const parts = (l.name||'').trim().split(/\s+/);
     const lastName = parts.length>1 ? parts.pop() : (parts[0]||'Unknown');
@@ -2210,6 +2262,8 @@ document.getElementById('btnExportCsv').onclick = () => {
       'Email': l.email||'', 'Phone': l.phone||'', 'Lead Source': 'Conference — '+evName, 'Event': evName,
       'Scanned By': l.scannedBy||'', 'Scanned Date': l.savedAt ? new Date(l.savedAt).toISOString() : '',
       'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Reason for Engagement': l.reasonForEngagement||'', 'Current Software': l.currentSoftware||'', 'Contact Source': l.contactSource||'', 'Description': l.notes||'',
+      ...(hasRequired ? {'Qualification Complete': leadMissingRequired(l).length ? 'No' : 'Yes'} : {}),
+      ...Object.fromEntries(qCols.map((f,i) => [qHeaders[i], formatQualAnswer(f, (l.qual||{})[f.id])])),
     };
   });
   const csv = Papa.unparse(rows);
@@ -2643,6 +2697,7 @@ function openReview(lead, existingKey){
   document.getElementById('f_email').value = State.pendingLead.email || '';
   document.getElementById('f_phone').value = State.pendingLead.phone || '';
   document.getElementById('f_notes').value = State.pendingLead.notes || '';
+  renderQualArea(State.pendingLead);
   renderSoftwareSelectOptions();
   document.getElementById('f_software').value = State.pendingLead.currentSoftware || '';
   renderEngagementReasonSelectOptions();
@@ -2795,10 +2850,11 @@ function updateContactAlert(){
   const email = document.getElementById('f_email').value.trim();
   const phone = document.getElementById('f_phone').value.trim();
   const area = document.getElementById('contactAlertArea');
-  const missing = !email && !phone;
+  const missing = !email && !phone;   // red styling only when BOTH are blank
+  const partial = !email || !phone;   // offer the web lookup when EITHER is blank (v1.14.0)
   document.getElementById('f_email_wrap').classList.toggle('missing', missing);
   document.getElementById('f_phone_wrap').classList.toggle('missing', missing);
-  if(!missing){ area.innerHTML = ''; return; }
+  if(!partial){ area.innerHTML = ''; return; }
   // Don't rebuild the box while a search is in flight — that would replace the
   // disabled "Searching…" button with a fresh enabled one, letting someone
   // double-fire the search, while the original promise still updates a button
@@ -2809,9 +2865,9 @@ function updateContactAlert(){
   area.innerHTML = `<div class="alert-box">
       <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
       <div style="flex:1;">
-        No email or phone on this lead yet — add it now if you have it, or come back and fill it in on edit later.
+        ${missing ? 'No email or phone on this lead yet' : (!email ? 'No email on this lead yet' : 'No phone on this lead yet')} — add it now if you have it, or come back and fill it in on edit later.
         ${hasKey
-          ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" id="btnWebSearchContact">${alreadySearched ? 'Search the web again' : 'Search the web for contact info'}</button></div><div id="webSearchStatus" class="hint" style="margin-top:4px;">${alreadySearched ? 'Already searched once for this lead — nothing turned up.' : ''}</div>`
+          ? `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" id="btnWebSearchContact">${alreadySearched ? 'Search the web again' : (missing ? 'Search the web for contact info' : (!email ? 'Search the web for an email' : 'Search the web for a phone number'))}</button></div><div id="webSearchStatus" class="hint" style="margin-top:4px;">${alreadySearched ? 'Already searched once for this lead — nothing turned up.' : ''}</div>`
           : `<div class="hint" style="margin-top:6px;">Add an Anthropic API key under Setup to enable a web lookup here (already checked the attendee list — nothing there either).</div>`}
       </div>
     </div>`;
@@ -2829,14 +2885,16 @@ function performWebContactSearch(){
   const targetLead = State.pendingLead; // guard: bail if the person navigates away mid-search
   btn.disabled = true; btn.textContent = 'Searching the web…';
   status.textContent = '';
-  searchWebForContact(name, company, title).then(result => {
+  const wantEmail = !document.getElementById('f_email').value.trim();
+  const wantPhone = !document.getElementById('f_phone').value.trim();
+  searchWebForContact(name, company, title, wantEmail, wantPhone).then(result => {
     if(State.pendingLead !== targetLead) return; // they closed/switched leads before this resolved
     // A completed attempt — whether it found something or came up empty — is
     // what "already searched" means. Only a network/API failure (the .catch
     // below) should leave this unset, so a rep can tell "we tried and there's
     // nothing" apart from "that attempt never really ran."
     State.pendingLead.webSearchAttempted = true;
-    if(!result || (!result.email && !result.phone)){
+    if(!result || (!(wantEmail && result.email) && !(wantPhone && result.phone))){
       btn.disabled = false; // must clear this before updateContactAlert(), which
                              // deliberately no-ops while the button is still disabled
       updateContactAlert(); // rebuilds with "already searched" wording + a "search again" button
@@ -2862,7 +2920,7 @@ function performWebContactSearch(){
     status.textContent = 'Search failed — check connection/API key and try again.';
   });
 }
-async function searchWebForContact(name, company, title){
+async function searchWebForContact(name, company, title, wantEmail=true, wantPhone=true){
   const apiKey = anthropicKey();
   if(!apiKey) return null;
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -2875,7 +2933,7 @@ async function searchWebForContact(name, company, title){
       model: ANTHROPIC_MODEL, max_tokens: 700,
       tools: [{type:'web_search_20250305', name:'web_search'}],
       messages: [{ role:'user', content:
-        `Find a publicly listed work email and/or phone number for "${name}"` +
+        `Find a publicly listed ${wantEmail && wantPhone ? 'work email and/or phone number' : (wantEmail ? 'work email address' : 'work phone number')} for "${name}"` +
         (title ? `, who holds the title "${title}"` : '') +
         (company ? ` at "${company}"` : '') +
         `. This is a U.S. county or local government office — look for official .gov directory pages, ` +
@@ -2906,12 +2964,27 @@ function closeReview(){
   switchTab(back);
 }
 
-document.getElementById('btnSaveLead').onclick = async () => {
+document.getElementById('btnSaveLead').onclick = () => saveLead(false);
+async function saveLead(allowIncomplete){
   const name = document.getElementById('f_name').value.trim();
   const email = document.getElementById('f_email').value.trim();
   const phone = document.getElementById('f_phone').value.trim();
   if(!name){ document.getElementById('f_name').focus(); toast('Add a name before saving'); return; }
   if(!State.activeEventId){ toast('Set an active event first (Events tab)'); return; }
+  const qual = collectQual(State.pendingLead);
+  const missingReq = missingRequiredLabels(qual);
+  const box = document.getElementById('qualIncompleteBox');
+  if(missingReq.length && !allowIncomplete){
+    highlightMissingQual(qual);
+    box.innerHTML = `<div class="alert-box"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+      <div style="flex:1;"><b>${missingReq.length} required ${missingReq.length===1?'question is':'questions are'} unanswered:</b> ${missingReq.map(esc).join(', ')}.
+      <div class="row wrap" style="margin-top:8px;gap:8px;"><button class="btn btn-outline btn-sm" id="btnQualFill">Fill them in</button><button class="btn btn-danger btn-sm" id="btnQualSaveAnyway">Save anyway as incomplete</button></div></div></div>`;
+    document.getElementById('btnQualFill').onclick = () => { box.innerHTML=''; const el = document.querySelector('#qualArea .qual-missing'); if(el) el.scrollIntoView({block:'center',behavior:'smooth'}); };
+    document.getElementById('btnQualSaveAnyway').onclick = () => saveLead(true);
+    const first = document.querySelector('#qualArea .qual-missing'); if(first) first.scrollIntoView({block:'center',behavior:'smooth'});
+    return;
+  }
+  box.innerHTML = '';
   const lead = {
     name, company: document.getElementById('f_company').value.trim(), title: document.getElementById('f_title').value.trim(),
     email, phone, notes: document.getElementById('f_notes').value.trim(),
@@ -2923,6 +2996,7 @@ document.getElementById('btnSaveLead').onclick = async () => {
     phoneNormalized: normalizePhone(phone),
     currentSoftware: document.getElementById('f_software').value,
     reasonForEngagement: document.getElementById('f_reason').value,
+    qual,
     contactSource: (State.pendingLead && State.pendingLead.contactSource) || (email||phone ? 'badge' : ''),
     source: (State.pendingLead && State.pendingLead.source) || 'manual',
     matched: !!(State.pendingLead && State.pendingLead.matched),
@@ -2943,6 +3017,251 @@ document.getElementById('btnSaveLead').onclick = async () => {
     toast('Save failed — check connection and try again');
   }
   btn.disabled = false; btn.textContent = 'Save lead';
+}
+
+/* ---------- event details: notes + qualification questions (v1.14.0) ---------- */
+// Both live on the event: notes in events/{id}/notes (one doc per note, so two
+// reps adding at once never overwrite each other), questions as a qualFields
+// array on the event doc (edited inside a transaction), answers on each lead
+// as lead.qual = {questionId: answer}. Question ids are stable: renaming or
+// archiving never orphans old answers.
+function activeEventDoc(){ return State.events.find(e => e.id === State.activeEventId) || null; }
+function activeQualFields(){
+  const ev = activeEventDoc();
+  return (ev && Array.isArray(ev.qualFields)) ? ev.qualFields.filter(f => f && f.id && !f.archived) : [];
+}
+function isAnswered(v){ return Array.isArray(v) ? v.length > 0 : (v != null && String(v).trim() !== ''); }
+function formatQualAnswer(f, v){ return Array.isArray(v) ? v.join('; ') : (v == null ? '' : String(v)); }
+function missingRequiredLabels(qual){
+  return activeQualFields().filter(f => f.required && !isAnswered((qual||{})[f.id])).map(f => f.label);
+}
+function leadMissingRequired(lead){ return missingRequiredLabels(lead && lead.qual); }
+function renderQualArea(lead){
+  const area = document.getElementById('qualArea');
+  const fields = activeQualFields();
+  document.getElementById('qualIncompleteBox').innerHTML = '';
+  if(!fields.length){ area.innerHTML = ''; return; }
+  const q = (lead && lead.qual) || {};
+  area.innerHTML = '<div class="hint" style="margin:4px 0 6px;font-weight:700;">Qualification questions</div>' + fields.map(f => {
+    const v = q[f.id];
+    const lbl = `<label class="field-label" for="qf_${f.id}">${esc(f.label)}${f.required ? ' *' : ''}</label>`;
+    let input = '';
+    if(f.type === 'single' || f.type === 'yesno'){
+      const opts = f.type === 'yesno' ? ['Yes','No'] : (f.options || []);
+      const extra = (v && !opts.includes(v)) ? [v] : []; // keep an answer whose option was later removed
+      input = `<select id="qf_${f.id}" data-qinput="${f.id}"><option value="">— select —</option>${opts.concat(extra).map(o => `<option value="${esc(o)}"${o===v?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
+    } else if(f.type === 'multi'){
+      const cur = Array.isArray(v) ? v : [];
+      const opts = (f.options || []).concat(cur.filter(c => !(f.options||[]).includes(c)));
+      input = opts.map((o,i) => `<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px;"><input type="checkbox" data-qinput="${f.id}" value="${esc(o)}"${cur.includes(o)?' checked':''}> ${esc(o)}</label>`).join('');
+    } else {
+      input = `<input type="text" id="qf_${f.id}" data-qinput="${f.id}" value="${esc(v||'')}">`;
+    }
+    return `<div class="field" data-qid="${f.id}">${lbl}${input}</div>`;
+  }).join('');
+  area.querySelectorAll('[data-qinput]').forEach(el => el.addEventListener('input', () => {
+    const w = el.closest('[data-qid]'); if(w) w.classList.remove('qual-missing');
+  }));
+}
+function readQualInput(f){
+  const els = Array.from(document.querySelectorAll(`#qualArea [data-qinput="${f.id}"]`));
+  if(!els.length) return undefined; // field not rendered — leave stored answer alone
+  if(f.type === 'multi') return els.filter(e => e.checked).map(e => e.value);
+  return (els[0].value || '').trim();
+}
+function collectQual(lead){
+  const out = Object.assign({}, (lead && lead.qual) || {});
+  activeQualFields().forEach(f => {
+    const v = readQualInput(f);
+    if(v === undefined) return;
+    if(isAnswered(v)) out[f.id] = v; else delete out[f.id];
+  });
+  return out;
+}
+function highlightMissingQual(qual){
+  activeQualFields().forEach(f => {
+    const w = document.querySelector(`#qualArea [data-qid="${f.id}"]`);
+    if(w) w.classList.toggle('qual-missing', !!f.required && !isAnswered(qual[f.id]));
+  });
+}
+function qualSummaryHtml(l){
+  const ev = activeEventDoc();
+  if(!ev || !Array.isArray(ev.qualFields) || !l.qual) return '';
+  const bits = ev.qualFields.filter(f => f && isAnswered(l.qual[f.id])).map(f => `${esc(f.label)}: <b>${esc(formatQualAnswer(f, l.qual[f.id]))}</b>`);
+  return bits.length ? `<div class="meta">${bits.join(' · ')}</div>` : '';
+}
+function exportQualFields(leads){
+  const ev = activeEventDoc();
+  const all = (ev && Array.isArray(ev.qualFields)) ? ev.qualFields.filter(f => f && f.id) : [];
+  return all.filter(f => !f.archived || leads.some(l => isAnswered((l.qual||{})[f.id])));
+}
+function qualReadoutBlock(leads){
+  const fields = activeQualFields().filter(f => f.type !== 'text');
+  if(!fields.length) return '';
+  const lines = fields.map(f => {
+    const counts = {}; let unanswered = 0;
+    leads.forEach(l => {
+      const v = (l.qual||{})[f.id];
+      if(!isAnswered(v)){ unanswered++; return; }
+      (Array.isArray(v) ? v : [v]).forEach(x => { counts[x] = (counts[x]||0) + 1; });
+    });
+    const parts = Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([k,n]) => `${k}: ${n}`);
+    return `- ${f.label}: ${parts.length ? parts.join('; ') : 'no answers'}${unanswered ? ` (${unanswered} unanswered)` : ''}`;
+  });
+  return `\nQualification question answers (event-specific questions reps asked):\n${lines.join('\n')}\n`;
+}
+function notesReadoutBlock(notes){
+  if(!notes || !notes.length) return '';
+  const lines = notes.slice(0, 30).map(n => `- ${n.tag ? '['+n.tag+'] ' : ''}${String(n.text||'').slice(0, 400)}`);
+  return `\nEvent-level notes logged by the team (venue, schedule, setup, staffing, lessons learned):\n${lines.join('\n')}\n`;
+}
+async function fetchEventNotes(eventId){
+  if(!eventId || !State.db) return [];
+  const snap = await State.db.collection('events').doc(eventId).collection('notes').orderBy('createdAt','desc').limit(30).get();
+  return snap.docs.map(d => d.data());
+}
+
+/* event detail screen */
+function openEventDetail(id){
+  const ev = State.events.find(e => e.id === id);
+  if(!ev) return;
+  State.detailEventId = id;
+  document.getElementById('evDetailTitle').textContent = ev.name + ' — details';
+  document.getElementById('evNoteText').value = '';
+  if(State.unsubNotes){ State.unsubNotes(); State.unsubNotes = null; }
+  State.eventNotes = [];
+  renderEventNotes();
+  State.unsubNotes = State.db.collection('events').doc(id).collection('notes').orderBy('createdAt','desc')
+    .onSnapshot(snap => {
+      State.eventNotes = snap.docs.map(d => Object.assign({id:d.id}, d.data()));
+      renderEventNotes();
+    }, err => { console.error('notes snapshot error', err); document.getElementById('evNotesList').innerHTML = '<div class="hint">Could not load notes — check connection, and that the latest firestore.rules are published.</div>'; });
+  renderQualBuilder();
+  switchViewOnly('eventdetail');
+}
+function closeEventDetail(){
+  if(State.unsubNotes){ State.unsubNotes(); State.unsubNotes = null; }
+  State.detailEventId = null;
+  switchTab('events');
+}
+function renderEventNotes(){
+  const wrap = document.getElementById('evNotesList');
+  const notes = State.eventNotes || [];
+  if(!notes.length){ wrap.innerHTML = '<p class="hint" style="margin:8px 0;">No notes yet for this event.</p>'; return; }
+  wrap.innerHTML = notes.map(n => `
+    <div class="card" style="padding:10px 12px;margin-bottom:8px;">
+      <div style="white-space:pre-wrap;word-break:break-word;">${esc(n.text)}</div>
+      <div class="row between wrap" style="margin-top:6px;">
+        <div class="hint">${n.tag ? `<span class="badge badge-gray">${esc(n.tag)}</span> ` : ''}${esc(n.author)||'Unknown'} · ${fmtTime(n.createdAt)}</div>
+        ${n.author === State.workerName ? `<button class="btn btn-danger btn-sm" onclick="deleteEventNote('${n.id}')">Delete</button>` : ''}
+      </div>
+    </div>`).join('');
+}
+document.getElementById('btnAddEvNote').onclick = async () => {
+  const ta = document.getElementById('evNoteText');
+  const text = ta.value.trim();
+  if(!text){ ta.focus(); toast('Write a note first'); return; }
+  if(!State.detailEventId) return;
+  const btn = document.getElementById('btnAddEvNote'); btn.disabled = true;
+  try{
+    await State.db.collection('events').doc(State.detailEventId).collection('notes').add({
+      text: text.slice(0, 2000), tag: document.getElementById('evNoteTag').value || '',
+      author: State.workerName || 'Unknown', createdAt: Date.now(),
+    });
+    ta.value = ''; toast('Note added');
+  }catch(err){ console.error(err); toast('Could not save the note — check connection'); }
+  btn.disabled = false;
+};
+async function deleteEventNote(noteId){
+  if(!confirm('Delete this note?')) return;
+  try{ await State.db.collection('events').doc(State.detailEventId).collection('notes').doc(noteId).delete(); }
+  catch(err){ console.error(err); toast('Could not delete — check connection'); }
+}
+
+/* qualification question builder */
+function newQualId(){ return 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function parseOptionList(raw){
+  const seen = new Set();
+  return String(raw||'').split(/[\n,]+/).map(x => x.trim()).filter(x => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase()));
+}
+async function updateQualFields(eventId, mutator){
+  const ref = State.db.collection('events').doc(eventId);
+  await State.db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const cur = (snap.exists && Array.isArray(snap.data().qualFields)) ? snap.data().qualFields.map(f => Object.assign({}, f)) : [];
+    const next = mutator(cur) || cur;
+    tx.set(ref, {qualFields: next}, {merge:true});
+  });
+}
+async function qualEdit(mutator, okMsg){
+  if(!State.detailEventId) return;
+  try{ await updateQualFields(State.detailEventId, mutator); if(okMsg) toast(okMsg); }
+  catch(err){ console.error(err); toast('Could not save — check connection and published rules'); }
+}
+function detailQualFields(){
+  const ev = State.events.find(e => e.id === State.detailEventId);
+  return (ev && Array.isArray(ev.qualFields)) ? ev.qualFields : [];
+}
+const QUAL_TYPE_LABEL = {single:'Single choice', multi:'Multiple choice', yesno:'Yes / No', text:'Free text'};
+function renderQualBuilder(){
+  const wrap = document.getElementById('qualBuilderList');
+  if(!wrap) return;
+  const fields = detailQualFields();
+  wrap.innerHTML = fields.length ? fields.map((f,i) => `
+    <div style="padding:10px 0;${i?'border-top:1px solid var(--border);':''}${f.archived?'opacity:.6;':''}">
+      <div style="font-weight:700;word-break:break-word;">${esc(f.label)}</div>
+      <div class="hint">${QUAL_TYPE_LABEL[f.type]||f.type}${f.required?' · <b>Required</b>':''}${f.archived?' · Archived':''}${(f.options&&f.options.length)?' · '+f.options.map(esc).join(', '):''}</div>
+      <div class="row wrap" style="gap:6px;margin-top:6px;">
+        <button class="btn btn-outline btn-sm" onclick="qfMove('${f.id}',-1)" aria-label="Move up"${i===0?' disabled':''}>↑</button>
+        <button class="btn btn-outline btn-sm" onclick="qfMove('${f.id}',1)" aria-label="Move down"${i===fields.length-1?' disabled':''}>↓</button>
+        <button class="btn btn-outline btn-sm" onclick="qfRename('${f.id}')">Rename</button>
+        ${(f.type==='single'||f.type==='multi') ? `<button class="btn btn-outline btn-sm" onclick="qfEditOptions('${f.id}')">Choices</button>` : ''}
+        <button class="btn btn-outline btn-sm" onclick="qfToggleRequired('${f.id}')">${f.required?'Make optional':'Make required'}</button>
+        <button class="btn btn-outline btn-sm" onclick="qfToggleArchive('${f.id}')">${f.archived?'Restore':'Archive'}</button>
+      </div>
+    </div>`).join('') : '<p class="hint" style="margin:0;">No questions yet. Add one below, or copy a set from a previous event.</p>';
+  // "copy from" picker
+  const sources = State.events.filter(e => e.id !== State.detailEventId && Array.isArray(e.qualFields) && e.qualFields.some(f => !f.archived));
+  const cw = document.getElementById('qualCopyWrap');
+  cw.innerHTML = sources.length ? `<div class="hint" style="margin-bottom:4px;">Or copy questions from another event (adds to the list above):</div>
+    <div class="row" style="gap:8px;"><select id="qfCopySource" style="flex:1;" aria-label="Copy questions from event">${sources.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+    <button class="btn btn-outline" id="btnCopyQual">Copy</button></div>` : '';
+  const cb = document.getElementById('btnCopyQual');
+  if(cb) cb.onclick = () => {
+    const src = State.events.find(e => e.id === document.getElementById('qfCopySource').value);
+    if(!src) return;
+    qualEdit(cur => cur.concat(src.qualFields.filter(f => !f.archived).map(f => Object.assign({}, f, {id:newQualId(), archived:false}))), 'Questions copied');
+  };
+}
+function qfMove(id, dir){ qualEdit(cur => { const i = cur.findIndex(f => f.id===id), j = i+dir; if(i<0||j<0||j>=cur.length) return cur; [cur[i],cur[j]] = [cur[j],cur[i]]; return cur; }); }
+function qfRename(id){
+  const f = detailQualFields().find(x => x.id===id); if(!f) return;
+  const v = (prompt('Rename question', f.label) || '').trim(); if(!v || v === f.label) return;
+  qualEdit(cur => { const t = cur.find(x => x.id===id); if(t) t.label = v.slice(0,120); return cur; }, 'Renamed');
+}
+function qfEditOptions(id){
+  const f = detailQualFields().find(x => x.id===id); if(!f) return;
+  const raw = prompt('Choices, comma-separated. (Answers already saved with a removed choice are kept.)', (f.options||[]).join(', '));
+  if(raw == null) return;
+  const opts = parseOptionList(raw); if(opts.length < 2){ toast('A choice question needs at least two choices'); return; }
+  qualEdit(cur => { const t = cur.find(x => x.id===id); if(t) t.options = opts; return cur; }, 'Choices updated');
+}
+function qfToggleRequired(id){ qualEdit(cur => { const t = cur.find(x => x.id===id); if(t) t.required = !t.required; return cur; }); }
+function qfToggleArchive(id){ qualEdit(cur => { const t = cur.find(x => x.id===id); if(t) t.archived = !t.archived; return cur; }); }
+document.getElementById('qfType').onchange = () => {
+  const t = document.getElementById('qfType').value;
+  document.getElementById('qfOptionsWrap').style.display = (t==='single'||t==='multi') ? '' : 'none';
+};
+document.getElementById('btnAddQual').onclick = () => {
+  const label = document.getElementById('qfLabel').value.trim();
+  const type = document.getElementById('qfType').value;
+  if(!label){ document.getElementById('qfLabel').focus(); toast('Write the question first'); return; }
+  const options = (type==='single'||type==='multi') ? parseOptionList(document.getElementById('qfOptions').value) : [];
+  if((type==='single'||type==='multi') && options.length < 2){ toast('Add at least two choices'); return; }
+  if(detailQualFields().length >= 30){ toast('That is the maximum of 30 questions per event'); return; }
+  const f = {id:newQualId(), label:label.slice(0,120), type, options, required: document.getElementById('qfRequired').checked, archived:false};
+  qualEdit(cur => cur.concat([f]), 'Question added');
+  document.getElementById('qfLabel').value = ''; document.getElementById('qfOptions').value = ''; document.getElementById('qfRequired').checked = false;
 };
 
 /* ---------- boot ---------- */

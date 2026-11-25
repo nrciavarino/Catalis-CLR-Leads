@@ -162,6 +162,10 @@
   ::placeholder{color:#788B9E;opacity:1;font-style:italic;}
   .field.missing input::placeholder{color:#9C6760;}
   textarea{resize:vertical;min-height:80px;font-family:inherit;}
+  /* Save stays on screen while the long lead form scrolls. Sticky inside the scrolling view (not
+     position:fixed) so the on-screen keyboard can't leave it stranded or covering a field. */
+  /* .view has bottom padding of (tab height + 18px); sticky measures from inside it, so offset by that. */
+  .sticky-save{position:sticky;bottom:calc(-1 * (var(--tab-h) + 14px));z-index:6;padding:10px 0 6px;margin-top:4px;background:linear-gradient(to top,var(--bg) 80%,rgba(255,255,255,0));}
   .field{margin-bottom:12px;} .field.missing input{border-color:var(--red);background:var(--red-pale);}
   .hint{font-size:calc(12px * var(--text-scale));color:var(--ink-soft);margin-top:4px;}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;}
@@ -285,7 +289,7 @@
   #view-readout{max-width:680px;margin:0 auto;}
   #readoutBody{white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:var(--ink);}
   @media print{
-    .readout-inputs, #topbar, #tabbar, .toast, #btnReadoutBack, #btnReadoutCopy, #btnReadoutPrint{display:none !important;}
+    #btnReadoutShare, .readout-inputs, #topbar, #tabbar, .toast, #btnReadoutBack, #btnReadoutCopy, #btnReadoutPrint{display:none !important;}
     #app{padding:0;} .view{display:none !important;} #view-readout{display:block !important;}
   }
 </style>
@@ -330,6 +334,7 @@
     </div>
     <div class="row wrap" style="margin-top:14px;align-items:center;">
       <button class="btn btn-outline grow" id="btnToggleCam">Stop camera</button>
+      <button class="btn btn-outline grow" id="btnTorch" style="display:none;" aria-pressed="false">Flashlight: off</button>
       <button class="btn btn-dark grow" id="btnTakePhoto">No QR — take photo</button>
     </div>
     <button class="btn btn-teal btn-block" id="btnShowMyCard" style="margin-top:10px;"><span aria-hidden="true">📇</span> My card</button>
@@ -353,13 +358,13 @@
     <div id="pipeFixArea"></div>
     <div id="contactAlertArea"></div>
     <div class="card">
-      <div class="field"><label class="field-label" for="f_name">Full name *</label><input type="text" id="f_name" placeholder="Jordan Rivera"></div>
+      <div class="field"><label class="field-label" for="f_name">Full name *</label><input type="text" id="f_name" name="cl-lead-fullname" placeholder="Jordan Rivera" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
       <div class="row">
-        <div class="field grow"><label class="field-label" for="f_company">Company / Agency</label><input type="text" id="f_company" placeholder="County Probation Dept."></div>
-        <div class="field grow"><label class="field-label" for="f_title">Title</label><input type="text" id="f_title" placeholder="Program Director"></div>
+        <div class="field grow"><label class="field-label" for="f_company">Company / Agency</label><input type="text" id="f_company" name="cl-lead-org" placeholder="County Probation Dept." autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
+        <div class="field grow"><label class="field-label" for="f_title">Title</label><input type="text" id="f_title" name="cl-lead-role" placeholder="Program Director" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
       </div>
-      <div class="field" id="f_email_wrap"><label class="field-label" for="f_email">Email</label><input type="email" id="f_email" placeholder="name@agency.gov"></div>
-      <div class="field" id="f_phone_wrap"><label class="field-label" for="f_phone">Phone</label><input type="tel" id="f_phone" placeholder="(555) 555-0100"></div>
+      <div class="field" id="f_email_wrap"><label class="field-label" for="f_email">Email</label><input type="text" inputmode="email" id="f_email" name="cl-lead-mail" placeholder="name@agency.gov" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
+      <div class="field" id="f_phone_wrap"><label class="field-label" for="f_phone">Phone</label><input type="text" inputmode="tel" id="f_phone" name="cl-lead-tel" placeholder="(555) 555-0100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
       <div class="field"><label class="field-label" for="f_reason">Reason for engagement</label>
         <select id="f_reason"><option value="">— not specified —</option></select>
       </div>
@@ -367,11 +372,11 @@
         <select id="f_software"><option value="">— not asked / not mentioned —</option></select>
       </div>
       <div id="qualArea"></div>
-      <div class="field"><label class="field-label" for="f_notes">Notes</label><textarea id="f_notes" placeholder="Interested in Benchmark integration…"></textarea></div>
+      <div class="field"><label class="field-label" for="f_notes">Notes</label><textarea id="f_notes" name="cl-lead-notes" autocomplete="off" placeholder="Interested in Benchmark integration…"></textarea></div>
       <div class="hint" id="f_source">Source: manual entry</div>
     </div>
     <div id="qualIncompleteBox"></div>
-    <button class="btn btn-primary btn-block" id="btnSaveLead" style="font-size:16px;padding:14px;">Save lead</button>
+    <div class="sticky-save"><button class="btn btn-primary btn-block" id="btnSaveLead" style="font-size:16px;padding:14px;">Save lead</button></div>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="closeReview()">Cancel</button>
   </div>
 
@@ -387,6 +392,7 @@
       <span class="hint" id="lastSyncedLabel" style="margin-left:auto;"></span>
     </div>
     <button class="btn btn-teal btn-block" id="btnExportCsv" style="margin-bottom:14px;">Export Salesforce CSV</button>
+    <button class="btn btn-outline btn-block" id="btnExportCsvDownload" style="display:none;margin:-6px 0 14px;">Download the file instead of sharing</button>
     <h2 class="section-title">Team activity</h2>
     <div class="card" id="teamAnalyticsWrap" style="margin-bottom:8px;"></div>
     <button class="btn btn-outline btn-block" id="btnOpenAnalytics" style="margin-bottom:14px;"><span aria-hidden="true">📊</span> View full analytics</button>
@@ -516,6 +522,13 @@
       <button class="btn btn-outline btn-block" id="btnScannerSelfTest">Run scanner self-test</button>
       <div id="selfTestOut" style="margin-top:10px;font-size:13.5px;line-height:1.5;"></div>
       <button class="btn btn-outline btn-sm" id="btnSelfTestCopy" style="display:none;margin-top:8px;">Copy results</button>
+    </div>
+
+    <h2 class="section-title">Scan feedback</h2>
+    <div class="card">
+      <label style="display:flex;align-items:center;gap:10px;padding:6px 0;"><input type="checkbox" id="fbHaptic"> <span>Vibrate on a successful scan <span class="hint" id="fbHapticNote"></span></span></label>
+      <label style="display:flex;align-items:center;gap:10px;padding:6px 0;"><input type="checkbox" id="fbSound"> <span>Beep on a successful scan <span class="hint">(an iPhone on silent stays quiet)</span></span></label>
+      <button class="btn btn-outline btn-sm" id="btnFbTest" style="margin-top:6px;">Test it</button>
     </div>
 
     <h2 class="section-title">Display</h2>
@@ -677,7 +690,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.14.5'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.15.0'; // bump this on every shipped change so it's obvious whether a device is up to date
 const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
@@ -1765,7 +1778,7 @@ function renderAttendeeTable(){
   tbody.innerHTML = rows.map((a) => {
     const cells = State.attendeeColumns.map(c => {
       const type = c.key==='email' ? 'email' : c.key==='phone' ? 'tel' : 'text';
-      return `<td><input type="${type}" value="${esc(a[c.key])}" onchange="updateAttendeeField('${a.id}','${c.key}',this.value)"></td>`;
+      return `<td><input type="text" inputmode="${type === 'text' ? 'text' : type}" autocomplete="off" data-lpignore="true" value="${esc(a[c.key])}" onchange="updateAttendeeField('${a.id}','${c.key}',this.value)"></td>`;
     }).join('');
     return `<tr>${cells}<td style="white-space:nowrap;">
       <button class="btn-icon btn-outline" style="width:32px;height:32px;color:var(--teal);border-color:var(--teal);" onclick="addAttendeeToLeads('${a.id}')" aria-label="Add ${esc(attendeeFullName(a))||'this attendee'} to leads" title="Add to leads">
@@ -2267,7 +2280,8 @@ function renderReadoutSuccess(text){
     </details>
     <div class="row wrap" style="margin-bottom:10px;">
       <button class="btn btn-outline grow" id="btnReadoutCopy">Copy text</button>
-      <button class="btn btn-teal grow" id="btnReadoutPrint">Print / Save PDF</button>
+      ${navigator.share ? '<button class="btn btn-teal grow" id="btnReadoutShare">Share</button>' : ''}
+      <button class="btn btn-outline grow" id="btnReadoutPrint">Print / Save PDF</button>
     </div>
     <button class="btn btn-outline btn-block" onclick="switchTab('leads')">Back to leads</button>`;
   document.getElementById('btnReadoutCopy').onclick = async () => {
@@ -2275,6 +2289,11 @@ function renderReadoutSuccess(text){
     catch(e){ toast('Could not copy — select the text manually'); }
   };
   document.getElementById('btnReadoutPrint').onclick = () => window.print();
+  const shareBtn = document.getElementById('btnReadoutShare');
+  if(shareBtn) shareBtn.onclick = async () => {
+    try{ await navigator.share({title: evName + ' — event readout', text}); }
+    catch(err){ if(!(err && err.name === 'AbortError')){ console.warn(err); toast('Could not open the share sheet — use Copy text'); } }
+  };
 }
 function renderReadoutError(){
   document.getElementById('readoutContent').innerHTML = `
@@ -2368,7 +2387,16 @@ async function deleteLead(key){
 }
 
 /* ---------- CSV export (Salesforce lead import shape) ---------- */
-document.getElementById('btnExportCsv').onclick = () => {
+// On a phone, the share sheet ("Save to Files", Mail, Drive, Teams...) is far more reliable than a
+// browser download, especially in a home-screen app on iPhone. Desktop keeps the plain download.
+function canShareCsvFile(){
+  try{
+    if(!window.matchMedia || !matchMedia('(pointer: coarse)').matches) return false;
+    if(!navigator.canShare || !navigator.share || typeof File === 'undefined') return false;
+    return navigator.canShare({files:[new File(['a'], 'a.csv', {type:'text/csv'})]});
+  }catch(e){ return false; }
+}
+async function exportCsv(forceDownload){
   const leads = allLeadsSorted();
   if(!leads.length){ toast('No leads to export yet'); return; }
   const evName = (State.events.find(e=>e.id===State.activeEventId)||{}).name || '';
@@ -2397,14 +2425,27 @@ document.getElementById('btnExportCsv').onclick = () => {
   // Neutralise spreadsheet formulas in every cell and header (attendee/rep text is untrusted input).
   const safeRows = rows.map(r => Object.fromEntries(Object.entries(r).map(([k,v]) => [csvSafe(k), csvSafe(v)])));
   const csv = Papa.unparse(safeRows);
+  const filename = 'compass-leads-'+(evName||'export').replace(/[^\w-]+/g,'_')+'-'+new Date().toISOString().slice(0,10)+'.csv';
+  if(!forceDownload && canShareCsvFile()){
+    try{
+      await navigator.share({files:[new File([csv], filename, {type:'text/csv'})], title: 'Compass Leads export'});
+      toast('CSV shared'); return;
+    }catch(err){
+      if(err && err.name === 'AbortError') return; // the rep closed the share sheet — not an error
+      console.warn('share failed, falling back to download', err);
+    }
+  }
   const blob = new Blob([csv], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'compass-leads-'+(evName||'export').replace(/[^\w-]+/g,'_')+'-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 4000);
   toast('CSV downloaded — ready to import into Salesforce');
-};
+}
+document.getElementById('btnExportCsv').onclick = () => exportCsv(false);
+document.getElementById('btnExportCsvDownload').onclick = () => exportCsv(true);
+if(canShareCsvFile()) document.getElementById('btnExportCsvDownload').style.display = '';
 
 /* ---------- camera / QR scanning ---------- */
 async function startCamera(){
@@ -2431,6 +2472,7 @@ async function startCamera(){
       }
     }
     await State.qrScanner.start();
+    refreshTorchButton();
     hideCamOffOverlay();
     document.getElementById('scanStatus').textContent = State.qrEngineOk === false ? 'Point camera at badge QR code (backup decoder)' : 'Point camera at badge QR code';
     document.getElementById('btnToggleCam').textContent = 'Stop camera';
@@ -2476,6 +2518,31 @@ function makeFallbackCamera(video){
     destroy(){ this.stop(); },
   };
 }
+/* ---------- flashlight (torch) ----------
+   Works where the browser exposes it on the camera track (Chrome on Android). iPhone Safari does not
+   let web pages switch the torch on, so the button simply never appears there. */
+function getVideoTrack(){
+  const v = document.getElementById('camVideo');
+  const stream = v && v.srcObject;
+  return (stream && stream.getVideoTracks) ? (stream.getVideoTracks()[0] || null) : null;
+}
+function torchSupported(){
+  try{ const t = getVideoTrack(); const c = t && t.getCapabilities && t.getCapabilities(); return !!(c && 'torch' in c); }
+  catch(e){ return false; }
+}
+function refreshTorchButton(){
+  const b = document.getElementById('btnTorch'); if(!b) return;
+  b.style.display = torchSupported() ? '' : 'none';
+  b.textContent = 'Flashlight: ' + (State.torchOn ? 'on' : 'off');
+  b.setAttribute('aria-pressed', State.torchOn ? 'true' : 'false');
+}
+async function setTorch(on){
+  const t = getVideoTrack(); if(!t) return false;
+  try{ await t.applyConstraints({advanced:[{torch: !!on}]}); State.torchOn = !!on; refreshTorchButton(); return true; }
+  catch(e){ console.warn('torch failed', e); toast('Flashlight isn\'t available on this camera'); State.torchOn = false; refreshTorchButton(); return false; }
+}
+function turnTorchOff(){ if(State.torchOn){ State.torchOn = false; const t = getVideoTrack(); try{ t && t.applyConstraints({advanced:[{torch:false}]}); }catch(e){} refreshTorchButton(); } }
+document.getElementById('btnTorch').onclick = () => setTorch(!State.torchOn);
 function showCamUnavailable(msg){
   const wrap = document.getElementById('scanWrap');
   let ov = document.getElementById('camOffOverlay');
@@ -2487,6 +2554,7 @@ function showCamUnavailable(msg){
   }
   ov.innerHTML = `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18"/><path d="M10.5 5h3l1 2H19a2 2 0 012 2v9M15 19H5a2 2 0 01-2-2V9a2 2 0 012-2h1"/><circle cx="12" cy="13" r="3.2"/></svg><div>${esc(msg)}</div>`;
   ov.style.display = 'flex';
+  State.torchOn = false; refreshTorchButton();
   document.getElementById('btnToggleCam').textContent = 'Try camera again';
   State.camAvailable = false;
 }
@@ -2500,10 +2568,11 @@ function hideCamOffOverlay(){ const ov=document.getElementById('camOffOverlay');
 // fresh camera request, rather than silently re-granting like desktop
 // Chrome does — so avoiding repeat requests within a session is the fix for
 // "had to allow the camera every time."
-function pauseCamera(){ if(State.qrScanner){ State.qrScanner.pause(); } stopBarcodePolling(); }
+function pauseCamera(){ turnTorchOff(); if(State.qrScanner){ State.qrScanner.pause(); } stopBarcodePolling(); }
 // Used only for the rep's explicit "Stop camera" tap — actually releases
 // the camera hardware/stream, since that's a deliberate turn-it-off action.
 function stopCameraFully(){
+  turnTorchOff();
   if(State.qrScanner){ State.qrScanner.stop(); State.qrScanner.destroy(); State.qrScanner=null; }
   stopBarcodePolling();
 }
@@ -2633,11 +2702,36 @@ function stopBarcodePolling(){
   if(barcodePollTimer){ clearInterval(barcodePollTimer); barcodePollTimer = null; }
 }
 let lastQrAt = 0;
+/* ---------- scan feedback: short buzz (Android) and a beep (works on iPhone, which ignores vibrate) ---------- */
+const LS_FB_HAPTIC = 'compassleads.fbHaptic', LS_FB_SOUND = 'compassleads.fbSound';
+function fbEnabled(key){ try{ return localStorage.getItem(key) !== '0'; }catch(e){ return true; } }
+let audioCtx = null;
+function unlockAudio(){ // browsers only allow audio after a tap, so prepare it on the first one
+  try{
+    if(!audioCtx){ const AC = window.AudioContext || window.webkitAudioContext; if(AC) audioCtx = new AC(); }
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }catch(e){}
+}
+['pointerdown','touchend','keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, {passive:true}));
+function beep(){
+  try{
+    if(!audioCtx) return;
+    const t = audioCtx.currentTime, o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+    o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + 0.16);
+  }catch(e){}
+}
+function scanFeedback(){
+  if(fbEnabled(LS_FB_HAPTIC) && navigator.vibrate){ try{ navigator.vibrate(70); }catch(e){} }
+  if(fbEnabled(LS_FB_SOUND)) beep();
+}
 function onQrDetected(text){
   const now = Date.now();
   if(now - lastQrAt < 1500) return;
   lastQrAt = now;
   if(!text) return;
+  scanFeedback();
   document.getElementById('scanStatus').textContent = 'Code detected — opening lead…';
   openReview(parseQrPayload(text));
 }
@@ -3274,7 +3368,7 @@ function renderQualArea(lead){
       const opts = (f.options || []).concat(cur.filter(c => !(f.options||[]).includes(c)));
       input = opts.map((o,i) => `<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px;"><input type="checkbox" data-qinput="${f.id}" value="${esc(o)}"${cur.includes(o)?' checked':''}> ${esc(o)}</label>`).join('');
     } else {
-      input = `<input type="text" id="qf_${f.id}" data-qinput="${f.id}" value="${esc(v||'')}">`;
+      input = `<input type="text" id="qf_${f.id}" name="cl-q-${f.id}" autocomplete="off" data-lpignore="true" data-qinput="${f.id}" value="${esc(v||'')}">`;
     }
     return `<div class="field" data-qid="${f.id}">${lbl}${input}</div>`;
   }).join('');
@@ -3503,6 +3597,15 @@ document.getElementById('btnAddQual').onclick = () => {
   qualEdit(cur => cur.concat([f]), 'Question added');
   document.getElementById('qfLabel').value = ''; document.getElementById('qfOptions').value = ''; document.getElementById('qfRequired').checked = false;
 };
+
+(function initFeedbackSettings(){
+  const h = document.getElementById('fbHaptic'), snd = document.getElementById('fbSound');
+  h.checked = fbEnabled(LS_FB_HAPTIC); snd.checked = fbEnabled(LS_FB_SOUND);
+  if(!navigator.vibrate) document.getElementById('fbHapticNote').textContent = '(this device doesn\'t support it, e.g. iPhone)';
+  h.onchange = () => { try{ localStorage.setItem(LS_FB_HAPTIC, h.checked ? '1' : '0'); }catch(e){} };
+  snd.onchange = () => { try{ localStorage.setItem(LS_FB_SOUND, snd.checked ? '1' : '0'); }catch(e){} };
+  document.getElementById('btnFbTest').onclick = () => { unlockAudio(); scanFeedback(); };
+})();
 
 /* ---------- scanner self-test (Setup) — lets a rep verify the camera/decoders ON THEIR PHONE ---------- */
 document.getElementById('btnScannerSelfTest').onclick = async () => {

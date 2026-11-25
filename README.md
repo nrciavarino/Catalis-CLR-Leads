@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.14.5` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.15.0` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -304,6 +304,17 @@ manually replace `index.html` on the host.
   them), that's worth knowing before turning this on, not after.
 
 ## Changelog
+
+- **v1.15.0** — phone ergonomics
+  - Added: **Pinned Save lead bar** on the review/edit screen so Save stays reachable on long forms.
+  - Changed: lead text fields no longer trigger the phone's name/address/card autofill suggestions
+    (text inputs with `inputmode`, `autocomplete="off"`, unique names, password-manager ignore hints).
+  - Added: **Torch (flashlight) button** in the scanner on devices that expose it (Android Chrome;
+    iPhone Safari does not support it, so the button is hidden there).
+  - Added: **Haptic + beep on a successful scan**, with Vibrate and Beep toggles in Setup → Scan
+    feedback (default on). iPhone ignores vibration, and the silent switch mutes the beep.
+  - Added: **Share sheet** for CSV export on phones (with a "Download the file instead" button) and a
+    Share button on the event readout. Desktop keeps the plain download.
 
 - **v1.14.5** — fixes from an independent QA pass
   - Fixed: **QR scanner console flood.** The regular qr-scanner build loads its decoding worker with a

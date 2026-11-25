@@ -1,6 +1,6 @@
 # Compass Leads — Roadmap
 
-Open backlog as of **v1.15.1**. Completed work lives in the README changelog.
+Open backlog as of **v1.15.2**. Completed work lives in the README changelog.
 
 **Lift scale (1–5):** 1 = a few lines or a small UI tweak; 2 = a contained feature reusing
 existing patterns; 3 = new data shape or a new screen; 4 = multi-part feature, new integration,

@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.15.1` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.15.2` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -304,6 +304,24 @@ manually replace `index.html` on the host.
   them), that's worth knowing before turning this on, not after.
 
 ## Changelog
+
+- **v1.15.2** — hint text looks like hints
+  - Changed: **placeholder (hint) text is dimmer** everywhere — `#8A9BAC` on white, `#AB827C` on a
+    missing-field's pale-red background (was `#788B9E` / `#9C6760`) — so it can't be mistaken for typed
+    text. This is a deliberate trade below the 4.5:1 WCAG text ratio (about 2.9:1 and 3:1); every field
+    still has a visible label above it, and the CSS comment says not to go lighter.
+  - Changed: **empty dropdowns look empty.** "— not specified —", "— not asked / not mentioned —",
+    "— select —" (qualification questions) and "No tag" now show in the same dim italic until a value
+    is chosen, then switch back to normal ink. Uses CSS `:has()` (Safari 15.4+, Chrome 105+); on older
+    browsers the dropdown just stays dark as before.
+  - Fixed: the **Company and Title hints were clipped** side by side on a phone ("County Probatio…").
+    On screens up to 520px wide the two fields now stack, so each gets the full width; wider screens
+    keep them side by side. Any hint that is still too long ends with an ellipsis instead of a
+    half-cut letter.
+  - Changed: the other hints that were clipped on a 360px phone were shortened (lead and attendee
+    search, event search, new event name, new reason for engagement, qualification question label,
+    and the saved-API-key hint). A test now checks every single-line hint on the main screens.
+  - No data, rules or index changes.
 
 - **v1.15.1** — event readout covers more of a big event
   - Changed: the readout now includes up to **100** lead notes (was 40). When more than 100 leads

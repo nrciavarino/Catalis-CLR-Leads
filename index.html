@@ -3639,6 +3639,8 @@ document.getElementById('btnScannerSelfTest').onclick = async () => {
       canvas = holder.querySelector('canvas');
       if(!canvas){ const img = holder.querySelector('img'); if(img){ canvas = document.createElement('canvas'); canvas.width = canvas.height = 256; canvas.getContext('2d').drawImage(img,0,0,256,256); } }
       holder.remove();
+      // The generator draws no quiet zone; native detectors (Android) need one. Pad with white.
+      if(canvas){ const pad = document.createElement('canvas'); pad.width = pad.height = 352; const pc = pad.getContext('2d'); pc.fillStyle = '#fff'; pc.fillRect(0,0,352,352); pc.drawImage(canvas, 48, 48, 256, 256); canvas = pad; }
     }catch(e){ add(false, 'Generate a test QR code', e.message); }
     if(canvas){
       try{

@@ -305,6 +305,16 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.14.4** — attendee titles come through; easier-to-grab scrollbar on desktop
+  - Fixed: the green **add to leads** button on the Attendees tab left the lead's **Title** blank when
+    the attendee file called that column anything other than "Title" (for example "Employment
+    Title"). The app now finds the title column by its label — Title, Job Title, Employment Title,
+    Position, Designation, Role or Job — and fills it. Labels that mean something else (Salutation
+    Title, Prefix, Suffix) are skipped. It works on lists already imported; no re-upload is needed.
+  - Fixed: the same title is now filled when a **scanned or manually entered** lead matches an
+    attendee, and the match chip shows it. A title already read from the badge is never overwritten.
+  - Changed: on a computer with a mouse or trackpad, scrollbars are wider, darker and highlight on
+    hover (they were 6px, hard to grab against the window edge). Touch devices keep the slim bar.
 - **v1.14.3** — any rep can edit any event note
   - Changed: event notes are team-editable. Any rep can edit any note (text and tag); an edit by
     someone other than the author shows "edited by <name>" with the time. Only the author can

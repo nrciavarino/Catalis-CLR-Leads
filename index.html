@@ -74,6 +74,15 @@
   button{font-family:inherit;}
   button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
   ::-webkit-scrollbar{width:6px;height:6px;} ::-webkit-scrollbar-thumb{background:#d9d4c6;border-radius:3px;}
+  /* Mouse/trackpad (desktop & tablet-with-mouse): a 6px scrollbar is nearly impossible to grab,
+     especially hard against the window edge. Make it wide, darker, and hover-highlighted. */
+  @media (pointer:fine){
+    ::-webkit-scrollbar{width:16px;height:16px;}
+    ::-webkit-scrollbar-track{background:#EEF1F0;}
+    ::-webkit-scrollbar-thumb{background:#A9B5B3;border-radius:8px;border:3px solid #EEF1F0;min-height:48px;}
+    ::-webkit-scrollbar-thumb:hover{background:#7F8F8D;}
+    ::-webkit-scrollbar-thumb:active{background:#5B6B73;}
+  }
 
   #topbar{
     height:calc(var(--topbar-h) + env(safe-area-inset-top)); padding-top:env(safe-area-inset-top);
@@ -652,7 +661,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.14.3'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.14.4'; // bump this on every shipped change so it's obvious whether a device is up to date
 const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
@@ -1520,6 +1529,25 @@ const CANONICAL_COLS = [
   {key:'firstName', label:'First Name'}, {key:'lastName', label:'Last Name'},
   {key:'company', label:'Company'}, {key:'email', label:'Email'}, {key:'phone', label:'Phone'},
 ];
+// A title is not one of the fixed attendee fields — it arrives as whatever the uploaded file called
+// it ("Title", "Job Title", "Employment Title", "Position", "Role"...). Find that column by its
+// label at lookup time, so lists already imported work too and no re-upload is needed.
+const TITLE_LABEL_WORDS = ['title','position','designation','role','job','jobtitle'];
+const TITLE_LABEL_EXCLUDE = ['salutation','prefix','honorific','suffix','courtesy','mr','ms'];
+function attendeeTitleKey(){
+  let best = null, bestScore = 0;
+  State.attendeeColumns.forEach(c => {
+    if(CANONICAL_COLS.some(k => k.key === c.key)) return;
+    const tokens = String(c.label||'').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    if(tokens.some(t => TITLE_LABEL_EXCLUDE.includes(t))) return;
+    let score = 0;
+    if(tokens.includes('title') || tokens.includes('jobtitle')) score = 2;
+    else if(tokens.some(t => TITLE_LABEL_WORDS.includes(t))) score = 1;
+    if(score > bestScore){ best = c.key; bestScore = score; }
+  });
+  return best;
+}
+function attendeeTitle(a){ const k = attendeeTitleKey(); return (k && a && a[k]) ? String(a[k]).trim() : ''; }
 function attendeeFullName(a){ return [a.firstName, a.lastName].filter(Boolean).join(' ').trim(); }
 // Older saved attendee records (or a legacy CSV) may only have a single `name`
 // field — split it once on the way in so the rest of the app only ever has to
@@ -1711,7 +1739,7 @@ function addAttendeeToLeads(id){
   openReview({
     name: attendeeFullName(a),
     company: a.company || '',
-    title: '',
+    title: attendeeTitle(a),
     email: a.email || '',
     phone: a.phone || '',
     notes: '',
@@ -2742,7 +2770,7 @@ function openReview(lead, existingKey){
     matchArea.innerHTML = `
       <div class="match-chip">
         <svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4AA89A" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg>
-        <div class="txt"><b>${match.confidence==='exact'?'Attendee list match':'Possible attendee match'}</b>${esc(attendeeFullName(a))}${a.company?' · '+esc(a.company):''}</div>
+        <div class="txt"><b>${match.confidence==='exact'?'Attendee list match':'Possible attendee match'}</b>${esc(attendeeFullName(a))}${attendeeTitle(a)?' · '+esc(attendeeTitle(a)):''}${a.company?' · '+esc(a.company):''}</div>
         <button class="btn btn-teal btn-sm" onclick="applyAttendeeMatch()">Use this</button>
       </div>`;
     State.pendingLead._suggestedMatch = a;
@@ -2868,6 +2896,7 @@ function applyAttendeeMatch(silent){
   if(!document.getElementById('f_email').value){ document.getElementById('f_email').value = a.email || ''; if(a.email) State.pendingLead.contactSource = 'attendee-list'; }
   if(!document.getElementById('f_phone').value){ document.getElementById('f_phone').value = a.phone || ''; if(a.phone) State.pendingLead.contactSource = 'attendee-list'; }
   if(!document.getElementById('f_company').value) document.getElementById('f_company').value = a.company || '';
+  if(!document.getElementById('f_title').value) document.getElementById('f_title').value = attendeeTitle(a); // never overwrites a title the badge already had
   State.pendingLead.matched = true;
   updateContactAlert();
   if(!silent) toast('Filled in from attendee list');

@@ -12,7 +12,14 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Compass Leads">
 <meta name="theme-color" content="#1d3a66">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js"></script>
+<!-- qr-scanner: prefer the LEGACY build, which inlines its decoding worker. The regular
+     UMD build loads the worker with a relative import() that fails with "Failed to resolve
+     module specifier ./qr-scanner-worker.min.js" in some browsers (seen in desktop Chrome QA),
+     firing an error on every frame. Falls back to the UMD build if the legacy file is
+     unreachable; startCamera() additionally probes the engine and uses a built-in ZXing
+     backup decoder when neither works, so the camera never floods the console or goes dark. -->
+<script src="https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.legacy.min.js"></script>
+<script>if(!window.QrScanner){ document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js"><\/script>'); }</script>
 <script>
   /* qr-scanner's UMD build loads its decoding worker with a relative import(),
      which fails with "Failed to resolve module specifier ./qr-scanner-worker.min.js"
@@ -123,7 +130,8 @@
 
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:none;border-radius:11px;padding:12px 16px;font-size:calc(15px * var(--text-scale));font-weight:600;cursor:pointer;transition:transform .06s ease, filter .15s ease;-webkit-tap-highlight-color:transparent;}
   .btn:active{transform:scale(.97);}
-  .btn-primary{background:var(--brass);color:var(--brass-dark);}
+  /* Strong teal with white text (≈5:1). The old pale teal read as disabled until pressed. */
+  .btn-primary{background:#1F7A6F;color:#fff;}
   .btn-primary:hover{filter:brightness(1.05);}
   .btn-primary:disabled{background:#E4DFCF;color:#9C978A;cursor:not-allowed;}
   .btn-dark{background:var(--navy);color:#fff;}
@@ -139,7 +147,7 @@
 
   label.field-label{display:block;font-size:calc(12.5px * var(--text-scale));font-weight:700;color:var(--ink-soft);margin:0 0 5px;text-transform:uppercase;letter-spacing:.3px;}
   input[type=text],input[type=email],input[type=tel],input[type=password],input[type=date],textarea,select{
-    width:100%;border:1.5px solid var(--border);border-radius:10px;padding:11px 12px;font-size:calc(15.5px * var(--text-scale));background:#fff;color:var(--ink);
+    width:100%;border:1.5px solid #8392A0;border-radius:10px;padding:11px 12px;font-size:calc(15.5px * var(--text-scale));background:#fff;color:var(--ink);
   }
   /* Placeholder example text needs to read as unmistakably NOT real data —
      color alone is easy to lose (especially against the red-pale missing-
@@ -174,7 +182,7 @@
   .tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--ink-soft);font-size:10.5px;font-weight:600;cursor:pointer;position:relative;}
   .tab-btn svg{width:21px;height:21px;}
   .tab-btn.active{color:var(--navy);}
-  .tab-btn .tcount{position:absolute;top:2px;right:20%;background:var(--red);color:#fff;font-size:9.5px;font-weight:800;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;}
+  .tab-btn .tcount{position:absolute;top:2px;right:20%;background:var(--navy);color:#fff;font-size:9.5px;font-weight:800;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;}
 
   .scan-wrap{position:relative;border-radius:var(--radius);overflow:hidden;background:#000;box-shadow:var(--shadow-lg);aspect-ratio:3/4;max-height:50vh;}
   .scan-wrap video{width:100%;height:100%;object-fit:cover;display:block;}
@@ -277,7 +285,7 @@
   #view-readout{max-width:680px;margin:0 auto;}
   #readoutBody{white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:var(--ink);}
   @media print{
-    #topbar, #tabbar, .toast, #btnReadoutBack, #btnReadoutCopy, #btnReadoutPrint{display:none !important;}
+    .readout-inputs, #topbar, #tabbar, .toast, #btnReadoutBack, #btnReadoutCopy, #btnReadoutPrint{display:none !important;}
     #app{padding:0;} .view{display:none !important;} #view-readout{display:block !important;}
   }
 </style>
@@ -502,6 +510,14 @@
       </button>
       <div id="helpTopicsWrap" style="display:none;"></div>
     </div>
+    <h2 class="section-title">Scanner self-test</h2>
+    <div class="card">
+      <div class="hint" style="margin-bottom:8px;">Run this on the phone you'll use at the booth. It checks the camera, the QR decoder and the barcode decoder, and tells you which one is in use. Send a screenshot or tap Copy if something shows ✗.</div>
+      <button class="btn btn-outline btn-block" id="btnScannerSelfTest">Run scanner self-test</button>
+      <div id="selfTestOut" style="margin-top:10px;font-size:13.5px;line-height:1.5;"></div>
+      <button class="btn btn-outline btn-sm" id="btnSelfTestCopy" style="display:none;margin-top:8px;">Copy results</button>
+    </div>
+
     <h2 class="section-title">Display</h2>
     <div class="card">
       <label for="textScaleSlider" style="font-weight:700;font-size:13.5px;display:block;margin-bottom:8px;">Text size <span id="textScaleValue" style="font-weight:400;color:var(--ink-soft);"></span></label>
@@ -661,7 +677,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.14.4'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.14.5'; // bump this on every shipped change so it's obvious whether a device is up to date
 const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
@@ -908,6 +924,34 @@ const State = {
 const DEFAULT_COMPETITORS = ['Tyler Technologies','Journal Technologies','Fidlar Technologies','Simplifile'];
 const SOFTWARE_FIXED_TAIL = ['Catalis (existing customer)','Homegrown / in-house system','Paper / no system','Other — see notes'];
 const DEFAULT_ENGAGEMENT_REASONS = ['Saw a demo','Existing Customer','Interested in Learning more','Drawing registrant'];
+/* ---------- contact validation (v1.14.5) ---------- */
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[A-Za-z]{2,}$/;
+function isValidEmail(v){ return EMAIL_RE.test(String(v||'').trim()); }
+function isValidPhone(v){
+  let s = String(v||'').trim();
+  if(!s) return false;
+  s = s.replace(/\s*(x|ext\.?|extension)\s*\d+\s*$/i, ''); // allow a trailing extension
+  if(!/^\+?[\d\s().\-]+$/.test(s)) return false;
+  const digits = s.replace(/\D/g, '').length;
+  return digits >= 7 && digits <= 15;
+}
+// A lead counts as reachable only if it has a VALID email or phone — "abc" is not contact info.
+function hasUsableContact(l){ return !!l && (isValidEmail(l.email) || isValidPhone(l.phone)); }
+function contactProblems(email, phone){
+  const out = [];
+  if(email && !isValidEmail(email)) out.push({field:'email', label:'Email', value:email});
+  if(phone && !isValidPhone(phone)) out.push({field:'phone', label:'Phone', value:phone});
+  return out;
+}
+// Spreadsheet-formula neutralizer for CSV cells (OWASP "CSV injection"): a cell starting with
+// = @ tab or CR is prefixed with an apostrophe; so is one starting with + or - UNLESS it looks like
+// a phone number or plain number, so "+1 555-0100" survives intact.
+function csvSafe(v){
+  if(typeof v !== 'string' || !v) return v;
+  if(/^[=@\t\r]/.test(v)) return "'" + v;
+  if(/^[+\-]/.test(v) && !/^[+\-]?[\d\s().\-]+(\s*(x|ext\.?)\s*\d+)?$/i.test(v)) return "'" + v;
+  return v;
+}
 // Every pick-list in the app is kept alphabetical (case-insensitive, natural number order).
 function alphaSort(arr){ return arr.slice().sort((a,b) => String(a).localeCompare(String(b), undefined, {sensitivity:'base', numeric:true})); }
 function lastNameKey(full){ const t = String(full||'').trim().split(/\s+/); const last = t.length > 1 ? t[t.length-1] : (t[0]||''); return (last + ' ' + t.slice(0,-1).join(' ')).toLowerCase(); }
@@ -1948,6 +1992,11 @@ function updateLeadTabCount(){
   const n = Object.keys(State.leads).length;
   const el = document.getElementById('tabCountLeads');
   if(n>0){ el.style.display='flex'; el.textContent = n>99?'99+':n; } else { el.style.display='none'; }
+  // The badge is the number of saved leads for this event. Say so for hover and screen readers
+  // (the badge itself is decorative; the tab's accessible name carries the information).
+  el.setAttribute('aria-hidden', 'true');
+  const tabBtn = document.querySelector('.tab-btn[data-tab="leads"]');
+  if(tabBtn){ const label = n > 0 ? 'Leads, ' + n + ' saved for this event' : 'Leads'; tabBtn.setAttribute('aria-label', label); tabBtn.title = label; }
 }
 function renderLeadsList(){
   const wrap = document.getElementById('leadsListWrap');
@@ -1955,7 +2004,7 @@ function renderLeadsList(){
   let leads = leadsForList();
   const sortSel = document.getElementById('leadSortSel');
   if(sortSel) sortSel.value = localStorage.getItem('compassleads.leadSort') || 'az';
-  const missing = leads.filter(l => !l.email && !l.phone).length;
+  const missing = leads.filter(l => !hasUsableContact(l)).length;
   document.getElementById('leadCountBadge').textContent = leads.length + (leads.length===1?' lead':' leads');
   const missingBadge = document.getElementById('leadMissingBadge');
   if(missing>0){ missingBadge.style.display='inline-flex'; missingBadge.textContent = missing + ' missing contact'; }
@@ -1974,7 +2023,7 @@ function renderLeadsList(){
     <div class="lead-item">
       <div class="top">
         <div><div class="name">${esc(l.name)||'(no name)'}</div><div class="meta">${esc(l.company)||''}${l.title? ' · '+esc(l.title):''}</div></div>
-        <div style="text-align:right;">${(!l.email && !l.phone) ? '<span class="badge badge-red">No contact</span>' : (l.matched ? '<span class="badge badge-teal">Matched</span>' : '')}${leadMissingRequired(l).length ? ' <span class="badge badge-brass" title="Required qualification questions unanswered">Incomplete</span>' : ''}</div>
+        <div style="text-align:right;">${(!hasUsableContact(l)) ? '<span class="badge badge-red">No contact</span>' : (l.matched ? '<span class="badge badge-teal">Matched</span>' : '')}${leadMissingRequired(l).length ? ' <span class="badge badge-brass" title="Required qualification questions unanswered">Incomplete</span>' : ''}</div>
       </div>
       <div class="meta" style="margin-top:6px;">${contactLinks(l.email, l.phone)}</div>
       ${qualSummaryHtml(l)}
@@ -1994,7 +2043,7 @@ function renderTeamAnalytics(){
   leads.forEach(l => { const rep = l.scannedBy || 'Unknown'; byRep[rep] = (byRep[rep]||0) + 1; });
   const rows = Object.entries(byRep).sort((a,b) => b[1]-a[1]);
   const matched = leads.filter(l => l.matched).length;
-  const missing = leads.filter(l => !l.email && !l.phone).length;
+  const missing = leads.filter(l => !hasUsableContact(l)).length;
   wrap.innerHTML = `
     <div class="row wrap" style="margin-bottom:${rows.length?10:0}px;gap:16px;">
       <div><div style="font-size:20px;font-weight:800;color:var(--navy);">${leads.length}</div><div class="hint">total leads</div></div>
@@ -2015,7 +2064,7 @@ function renderAnalyticsScreen(){
   const leads = allLeadsSorted();
   const total = leads.length;
   const matched = leads.filter(l => l.matched).length;
-  const missing = leads.filter(l => !l.email && !l.phone).length;
+  const missing = leads.filter(l => !hasUsableContact(l)).length;
   document.getElementById('analyticsSummaryWrap').innerHTML = total ? `
     <div class="row wrap" style="gap:20px;">
       <div><div style="font-size:22px;font-weight:800;color:var(--navy);">${total}</div><div class="hint">total leads</div></div>
@@ -2119,6 +2168,19 @@ function openReadoutScreen(){
     renderReadoutError();
   });
 }
+// Hard dates for the model. Without them it guessed the YEAR (it wrote "December 7-8, 2025" for an
+// event whose notes only said "Mon 12/7"). Give it today's date and the real capture window, and tell it
+// never to invent a year.
+function readoutDateContext(leads){
+  const fmt = ms => new Date(ms).toLocaleDateString('en-US', {weekday:'short', year:'numeric', month:'short', day:'numeric'});
+  const ev = activeEventDoc();
+  const times = leads.map(l => l.savedAt).filter(Boolean).sort((a,b) => a-b);
+  const lines = ['Today is ' + fmt(Date.now()) + '.'];
+  if(ev && ev.createdAt) lines.push('This event record was created ' + fmt(ev.createdAt) + '.');
+  if(times.length) lines.push('Leads were captured between ' + fmt(times[0]) + ' and ' + fmt(times[times.length-1]) + '.');
+  lines.push('DATES: use only the dates and years stated in this message. If a date in the notes has no year (for example "Mon 12/7"), take the year in which that weekday and date match and that is closest to today; if you cannot tell, leave the year out. Never state a year that is not supported here.');
+  return lines.join('\n');
+}
 function buildReadoutPrompt(leads, eventNotes){
   const evName = (State.events.find(e=>e.id===State.activeEventId)||{}).name || 'this event';
   const byCompany = {};
@@ -2142,6 +2204,7 @@ function buildReadoutPrompt(leads, eventNotes){
 
 Event: ${evName}
 Total leads captured: ${leads.length}
+${readoutDateContext(leads)}
 
 Top companies/agencies by lead count:
 ${topCompanies.map(([c,n]) => `- ${c}: ${n}`).join('\n')}
@@ -2164,6 +2227,7 @@ async function generateReadout(leads){
   // to the readout, but a failure here must never block generating it.
   let eventNotes = [];
   try{ eventNotes = await fetchEventNotes(State.activeEventId); }catch(e){ console.warn('event notes unavailable for readout', e); }
+  State.lastReadoutPrompt = buildReadoutPrompt(leads, eventNotes); // shown to the rep under the readout
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -2175,7 +2239,7 @@ async function generateReadout(leads){
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
       max_tokens: 1200,
-      messages: [{ role:'user', content: buildReadoutPrompt(leads, eventNotes) }]
+      messages: [{ role:'user', content: State.lastReadoutPrompt }]
     })
   });
   if(!resp.ok){
@@ -2196,6 +2260,11 @@ function renderReadoutSuccess(text){
       <div class="hint" style="margin-bottom:14px;">AI-drafted from this event's leads — review before sharing. Generated ${fmtTime(Date.now())}.</div>
       <div id="readoutBody">${esc(text)}</div>
     </div>
+    <details class="card readout-inputs" style="margin-bottom:12px;">
+      <summary style="cursor:pointer;font-weight:700;">What this readout was based on</summary>
+      <div class="hint" style="margin:8px 0;">Exactly what was sent to the AI: totals, company counts, rep notes (with lead names and companies), event notes and dates. No emails or phone numbers are sent. Check the dates and counts here before sharing.</div>
+      <pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;margin:0;max-height:320px;overflow:auto;">${esc(State.lastReadoutPrompt || '')}</pre>
+    </details>
     <div class="row wrap" style="margin-bottom:10px;">
       <button class="btn btn-outline grow" id="btnReadoutCopy">Copy text</button>
       <button class="btn btn-teal grow" id="btnReadoutPrint">Print / Save PDF</button>
@@ -2311,16 +2380,23 @@ document.getElementById('btnExportCsv').onclick = () => {
     const parts = (l.name||'').trim().split(/\s+/);
     const lastName = parts.length>1 ? parts.pop() : (parts[0]||'Unknown');
     const firstName = parts.join(' ');
+    // Salesforce rejects malformed emails, so an invalid email/phone is kept out of those columns and
+    // preserved in Description instead of being silently dropped.
+    const badBits = [];
+    const exEmail = (!l.email || isValidEmail(l.email)) ? (l.email||'') : (badBits.push('Invalid email: ' + l.email), '');
+    const exPhone = (!l.phone || isValidPhone(l.phone)) ? (l.phone||'') : (badBits.push('Invalid phone: ' + l.phone), '');
     return {
       'First Name': firstName, 'Last Name': lastName || 'Unknown', 'Company': l.company||'', 'Title': l.title||'',
-      'Email': l.email||'', 'Phone': l.phone||'', 'Lead Source': 'Conference — '+evName, 'Event': evName,
+      'Email': exEmail, 'Phone': exPhone, 'Lead Source': 'Conference — '+evName, 'Event': evName,
       'Scanned By': l.scannedBy||'', 'Scanned Date': l.savedAt ? new Date(l.savedAt).toISOString() : '',
-      'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Reason for Engagement': l.reasonForEngagement||'', 'Current Software': l.currentSoftware||'', 'Contact Source': l.contactSource||'', 'Description': l.notes||'',
+      'Matched Attendee List': l.matched ? 'Yes' : 'No', 'Reason for Engagement': l.reasonForEngagement||'', 'Current Software': l.currentSoftware||'', 'Contact Source': l.contactSource||'', 'Description': [l.notes||'', ...badBits].filter(Boolean).join(' | '),
       ...(hasRequired ? {'Qualification Complete': leadMissingRequired(l).length ? 'No' : 'Yes'} : {}),
       ...Object.fromEntries(qCols.map((f,i) => [qHeaders[i], formatQualAnswer(f, (l.qual||{})[f.id])])),
     };
   });
-  const csv = Papa.unparse(rows);
+  // Neutralise spreadsheet formulas in every cell and header (attendee/rep text is untrusted input).
+  const safeRows = rows.map(r => Object.fromEntries(Object.entries(r).map(([k,v]) => [csvSafe(k), csvSafe(v)])));
+  const csv = Papa.unparse(safeRows);
   const blob = new Blob([csv], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2343,13 +2419,20 @@ async function startCamera(){
   }
   try{
     if(!State.qrScanner){
-      State.qrScanner = new QrScanner(video, result => onQrDetected(result.data || result), {
-        returnDetailedScanResult: true, highlightScanRegion: false, highlightCodeOutline: false, maxScansPerSecond: 5,
-      });
+      // Probe once whether qr-scanner's decoding engine actually works here. If not, run the
+      // camera ourselves and let ZXing decode QR as well as 1D barcodes (see decodeBarcodeFrame).
+      if(State.qrEngineOk === undefined) State.qrEngineOk = await probeQrEngine();
+      if(State.qrEngineOk){
+        State.qrScanner = new QrScanner(video, result => onQrDetected(result.data || result), {
+          returnDetailedScanResult: true, highlightScanRegion: false, highlightCodeOutline: false, maxScansPerSecond: 5,
+        });
+      } else {
+        State.qrScanner = makeFallbackCamera(video);
+      }
     }
     await State.qrScanner.start();
     hideCamOffOverlay();
-    document.getElementById('scanStatus').textContent = 'Point camera at badge QR code';
+    document.getElementById('scanStatus').textContent = State.qrEngineOk === false ? 'Point camera at badge QR code (backup decoder)' : 'Point camera at badge QR code';
     document.getElementById('btnToggleCam').textContent = 'Stop camera';
     State.camAvailable = true;
     startBarcodePolling(); // updates the status text above to also mention barcodes, but only once it's confirmed the decoder actually loaded — see initBarcodeReader()
@@ -2358,6 +2441,40 @@ async function startCamera(){
     if(State.qrScanner){ try{ State.qrScanner.destroy(); }catch(e){} State.qrScanner = null; }
     showCamUnavailable('Camera permission was blocked, or no camera is available. You can still add leads manually or via photo.');
   }
+}
+// Does qr-scanner's engine work in this browser? A blank image should come back as the NORMAL
+// "No QR code found" rejection; anything else (worker import failure, blocked CDN...) means broken.
+async function probeQrEngine(){
+  if(!window.QrScanner){ return false; }
+  try{
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    c.getContext('2d').fillStyle = '#fff'; c.getContext('2d').fillRect(0,0,64,64);
+    await QrScanner.scanImage(c, {returnDetailedScanResult:true});
+    return true;
+  }catch(e){
+    const msg = String((e && e.message) || e);
+    if(/no qr code found/i.test(msg)) return true;
+    console.warn('qr-scanner engine unavailable — using the ZXing backup decoder. Reason:', msg);
+    return false;
+  }
+}
+// Minimal stand-in for QrScanner's camera handling (start/pause/stop/destroy) used only when its
+// decoder is broken. Like the real one, pause() keeps the stream alive so iOS doesn't re-prompt.
+function makeFallbackCamera(video){
+  let stream = null;
+  return {
+    isFallback: true,
+    async start(){
+      if(!stream || !stream.active){
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}, audio:false});
+        video.srcObject = stream; video.muted = true; video.setAttribute('playsinline','');
+      }
+      await video.play();
+    },
+    pause(){},
+    stop(){ if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; } video.srcObject = null; },
+    destroy(){ this.stop(); },
+  };
 }
 function showCamUnavailable(msg){
   const wrap = document.getElementById('scanWrap');
@@ -2404,8 +2521,9 @@ document.getElementById('btnToggleCam').onclick = () => {
    Every step is defensive: if the CDN script failed to load, or its API
    shape doesn't match what's expected, this silently no-ops and QR scanning
    keeps working exactly as before — barcode support just doesn't activate. */
-let barcodeReader = null;
+let barcodeReader = null, barcodeQrReader = null;
 let barcodeReaderTried = false;
+let lastBarcodeText = null, lastBarcodeAt = 0;
 let barcodePollTimer = null;
 let barcodeCanvas = null, barcodeCtx = null;
 function initBarcodeReader(){
@@ -2438,13 +2556,21 @@ function initBarcodeReader(){
     const reader = new NS.MultiFormatReader();
     reader.setHints(hints);
     barcodeReader = reader;
+    // Second reader for QR codes, used only when qr-scanner's own engine is broken (backup decoder).
+    try{
+      const qh = new Map();
+      qh.set(NS.DecodeHintType.POSSIBLE_FORMATS, [BF.QR_CODE]);
+      qh.set(NS.DecodeHintType.TRY_HARDER, true);
+      barcodeQrReader = new NS.MultiFormatReader(); barcodeQrReader.setHints(qh);
+    }catch(e){ barcodeQrReader = null; }
   }catch(e){ console.error('Barcode reader unavailable, continuing QR-only:', e); barcodeReader = null; }
   return barcodeReader;
 }
 // One synchronous decode attempt on the current camera frame. Returns the
 // barcode text, or null (including the normal "no barcode in this frame" case,
 // which ZXing signals by throwing NotFoundException).
-function decodeBarcodeFrame(video){
+function decodeBarcodeFrame(video, reader){
+  reader = reader || barcodeReader;
   const NS = window.ZXing;
   const vw = video.videoWidth, vh = video.videoHeight;
   if(!vw || !vh) return null;
@@ -2459,7 +2585,7 @@ function decodeBarcodeFrame(video){
   barcodeCtx.drawImage(video, 0, 0, w, h);
   try{
     const bitmap = new NS.BinaryBitmap(new NS.HybridBinarizer(new NS.HTMLCanvasElementLuminanceSource(barcodeCanvas)));
-    const result = barcodeReader.decodeWithState(bitmap);
+    const result = reader.decodeWithState(bitmap);
     return (result && typeof result.getText === 'function') ? result.getText() : null;
   }catch(e){ return null; }
 }
@@ -2489,8 +2615,18 @@ function startBarcodePolling(){
     // camera, review screen already open, or no actual video frame yet
     // (readyState HAVE_CURRENT_DATA=2+).
     if(!State.qrScanner || State.pendingLead || !video || video.readyState < 2) return;
-    const text = decodeBarcodeFrame(video);
-    if(text) onQrDetected(text); // shared entry point — same dedupe/debounce as a QR hit
+    // When qr-scanner's engine is broken, ZXing reads QR codes too (backup decoder).
+    let text = (State.qrEngineOk === false && barcodeQrReader) ? decodeBarcodeFrame(video, barcodeQrReader) : null;
+    let isQr = !!text;
+    if(!text) text = decodeBarcodeFrame(video);
+    if(!text) { lastBarcodeText = null; return; }
+    // 1D symbologies like ITF/Codabar/Code 39 can "read" noise in a busy camera frame; a real
+    // barcode held at the camera reads the same twice running. Require two matching reads
+    // (QR has built-in error correction, so it goes straight through).
+    const now = Date.now();
+    if(!isQr && !(lastBarcodeText === text && now - lastBarcodeAt < 2500)){ lastBarcodeText = text; lastBarcodeAt = now; return; }
+    lastBarcodeText = null;
+    onQrDetected(text); // shared entry point — same dedupe/debounce as a QR hit
   }, 450);
 }
 function stopBarcodePolling(){
@@ -3028,6 +3164,15 @@ function closeReview(){
 }
 
 document.getElementById('btnSaveLead').onclick = () => saveLead(false);
+// Gentle live check: flag an invalid email/phone as soon as the rep leaves the field.
+[['f_email', isValidEmail, 'That doesn\'t look like an email address'], ['f_phone', isValidPhone, 'That doesn\'t look like a phone number']].forEach(([id, ok, msg]) => {
+  const input = document.getElementById(id), wrap = document.getElementById(id + '_wrap');
+  const hint = document.createElement('div'); hint.className = 'hint'; hint.style.cssText = 'color:var(--red);display:none;margin-top:4px;'; hint.id = id + '_err';
+  input.insertAdjacentElement('afterend', hint);
+  const check = () => { const v = input.value.trim(); const bad = v && !ok(v); hint.textContent = bad ? msg : ''; hint.style.display = bad ? 'block' : 'none'; };
+  input.addEventListener('blur', check);
+  input.addEventListener('input', () => { wrap.classList.remove('qual-missing'); if(hint.style.display === 'block') check(); });
+});
 async function saveLead(allowIncomplete){
   const name = document.getElementById('f_name').value.trim();
   const email = document.getElementById('f_email').value.trim();
@@ -3037,6 +3182,17 @@ async function saveLead(allowIncomplete){
   const qual = collectQual(State.pendingLead);
   const missingReq = missingRequiredLabels(qual);
   const box = document.getElementById('qualIncompleteBox');
+  const problems = contactProblems(email, phone);
+  if(problems.length && !(State.pendingLead && State.pendingLead._badContactOk)){
+    problems.forEach(pr => document.getElementById(pr.field === 'email' ? 'f_email_wrap' : 'f_phone_wrap').classList.add('qual-missing'));
+    box.innerHTML = `<div class="alert-box"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+      <div style="flex:1;"><b>${problems.map(pr => esc(pr.label) + ' “' + esc(pr.value) + '”').join(' and ')} ${problems.length===1?'doesn\'t':'don\'t'} look valid.</b> A bad address or number can\'t be followed up and may be rejected by the Salesforce import.
+      <div class="row wrap" style="margin-top:8px;gap:8px;"><button class="btn btn-outline btn-sm" id="btnContactFix">Fix it</button><button class="btn btn-danger btn-sm" id="btnContactSaveAnyway">Save anyway</button></div></div></div>`;
+    document.getElementById('btnContactFix').onclick = () => { box.innerHTML=''; const el = document.getElementById(problems[0].field === 'email' ? 'f_email' : 'f_phone'); el.focus(); el.scrollIntoView({block:'center',behavior:'smooth'}); };
+    document.getElementById('btnContactSaveAnyway').onclick = () => { State.pendingLead._badContactOk = true; saveLead(allowIncomplete); };
+    box.scrollIntoView({block:'center',behavior:'smooth'});
+    return;
+  }
   if(missingReq.length && !allowIncomplete){
     highlightMissingQual(qual);
     box.innerHTML = `<div class="alert-box"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
@@ -3346,6 +3502,67 @@ document.getElementById('btnAddQual').onclick = () => {
   const f = {id:newQualId(), label:label.slice(0,120), type, options, required: document.getElementById('qfRequired').checked, archived:false};
   qualEdit(cur => cur.concat([f]), 'Question added');
   document.getElementById('qfLabel').value = ''; document.getElementById('qfOptions').value = ''; document.getElementById('qfRequired').checked = false;
+};
+
+/* ---------- scanner self-test (Setup) — lets a rep verify the camera/decoders ON THEIR PHONE ---------- */
+document.getElementById('btnScannerSelfTest').onclick = async () => {
+  const out = document.getElementById('selfTestOut'), copyBtn = document.getElementById('btnSelfTestCopy');
+  const rows = [];
+  const add = (ok, label, detail) => rows.push({ok, label, detail: detail || ''});
+  const paint = () => {
+    out.innerHTML = rows.map(r => `<div style="padding:3px 0;"><b style="color:${r.ok===true?'var(--teal)':(r.ok===false?'var(--red)':'#8a6d00')};">${r.ok===true?'✓':(r.ok===false?'✗':'!')}</b> <b>${esc(r.label)}</b>${r.detail ? ' — ' + esc(r.detail) : ''}</div>`).join('');
+  };
+  out.textContent = 'Running…'; copyBtn.style.display = 'none';
+  try{
+    add(location.protocol === 'https:' || location.hostname === 'localhost', 'Secure page (https)', location.protocol + '//' + location.host);
+    add(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), 'Camera API available');
+    try{
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      const n = devs.filter(d => d.kind === 'videoinput').length;
+      add(n > 0 ? true : null, 'Cameras found', n + (n ? '' : ' (some browsers list none until permission is granted)'));
+    }catch(e){ add(null, 'Cameras found', 'could not list: ' + e.message); }
+    try{
+      const st = navigator.permissions && await navigator.permissions.query({name:'camera'});
+      add(st ? (st.state !== 'denied') : null, 'Camera permission', st ? st.state : 'this browser doesn\'t report it (normal on iPhone)');
+    }catch(e){ add(null, 'Camera permission', 'this browser doesn\'t report it (normal on iPhone)'); }
+    add(!!window.QrScanner, 'QR library loaded', window.QrScanner ? (window.BarcodeDetector ? 'native BarcodeDetector present' : 'no native BarcodeDetector (uses the worker)') : 'script did not load');
+    // Build a real QR code and decode it with each engine.
+    let canvas = null;
+    try{
+      const holder = document.createElement('div'); holder.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(holder);
+      new QRCode(holder, { text: 'SELFTEST | Compass Leads | OK', width: 256, height: 256, correctLevel: QRCode.CorrectLevel.M });
+      await new Promise(r => setTimeout(r, 80));
+      canvas = holder.querySelector('canvas');
+      if(!canvas){ const img = holder.querySelector('img'); if(img){ canvas = document.createElement('canvas'); canvas.width = canvas.height = 256; canvas.getContext('2d').drawImage(img,0,0,256,256); } }
+      holder.remove();
+    }catch(e){ add(false, 'Generate a test QR code', e.message); }
+    if(canvas){
+      try{
+        const r = await QrScanner.scanImage(canvas, {returnDetailedScanResult:true});
+        add(/SELFTEST/.test(r.data), 'QR decoder (qr-scanner)', 'decoded a generated code');
+      }catch(e){ add(false, 'QR decoder (qr-scanner)', String(e && e.message || e).slice(0,140) + ' — the app will use the backup decoder'); }
+      try{
+        initBarcodeReader();
+        if(!barcodeQrReader) throw new Error('ZXing not loaded');
+        const NS = window.ZXing;
+        const bmp = new NS.BinaryBitmap(new NS.HybridBinarizer(new NS.HTMLCanvasElementLuminanceSource(canvas)));
+        const res = barcodeQrReader.decodeWithState(bmp);
+        add(/SELFTEST/.test(res.getText()), 'Backup QR decoder (ZXing)', 'decoded a generated code');
+      }catch(e){ add(false, 'Backup QR decoder (ZXing)', String(e && e.message || e).slice(0,140)); }
+    }
+    add(!!initBarcodeReader(), '1D barcode decoder ready', initBarcodeReader() ? 'Code 128/39/EAN/UPC/ITF/Codabar' : 'ZXing didn\'t load — barcodes won\'t scan, QR still works');
+    const engine = State.qrEngineOk === undefined ? await probeQrEngine() : State.qrEngineOk;
+    add(engine ? true : null, 'Decoder the camera will use', engine ? 'qr-scanner (normal)' : 'ZXing backup decoder');
+    const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
+    add(null, 'Environment', (standalone ? 'installed app' : 'browser tab') + ' · ' + APP_VERSION + ' · ' + navigator.userAgent.slice(0, 90));
+  }catch(e){ add(false, 'Self-test crashed', e.message); }
+  paint();
+  State.selfTestText = rows.map(r => (r.ok===true?'PASS':(r.ok===false?'FAIL':'NOTE')) + ' ' + r.label + (r.detail ? ' — ' + r.detail : '')).join('\n');
+  copyBtn.style.display = 'inline-flex';
+};
+document.getElementById('btnSelfTestCopy').onclick = async () => {
+  try{ await navigator.clipboard.writeText(State.selfTestText || ''); toast('Copied'); }catch(e){ toast('Could not copy — screenshot instead'); }
 };
 
 /* ---------- boot ---------- */

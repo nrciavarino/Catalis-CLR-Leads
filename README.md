@@ -305,6 +305,36 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.14.5** — fixes from an independent QA pass
+  - Fixed: **QR scanner console flood.** The regular qr-scanner build loads its decoding worker with a
+    relative `import()` that fails in some browsers ("Failed to resolve module specifier
+    ./qr-scanner-worker.min.js"), once per frame. The app now loads the **legacy build, which has the
+    worker built in**, falls back to the regular build if that file is unreachable, and — as a last
+    resort — probes the engine before using it and switches to a **ZXing backup decoder** (which
+    reads QR as well as 1D barcodes) so the camera never floods the console or goes dark.
+  - Added: **Setup → Scanner self-test.** Run it on the phone itself: checks https, camera access,
+    the QR decoder, the backup decoder and the barcode decoder, says which decoder the camera will
+    use, and has a Copy results button.
+  - Fixed: **1D barcodes need two matching reads** before opening a lead (they could "read" noise in a
+    busy camera frame and open a lead with source *QR / barcode scan*). QR codes are unaffected.
+  - Added: **email and phone validation.** An invalid entry now shows a warning with *Fix it* or
+    *Save anyway*, and an inline hint when you leave the field. A lead only counts as having contact
+    info if its email or phone is valid, so the "missing contact" counts on Leads, Analytics and Team
+    Activity no longer treat "abc" as a contact.
+  - Fixed: **CSV export** neutralises spreadsheet formulas in every cell and header (values starting
+    with `=`, `@`, tab, CR, or `+`/`-` that aren't phone numbers get a leading apostrophe), and an
+    invalid email or phone is left out of the Email/Phone columns (Salesforce rejects malformed
+    emails) and recorded in Description instead.
+  - Fixed: the **AI readout guessed the year** (wrote 2025 for a 2026 event). The prompt now carries
+    today's date, the event's creation date and the lead-capture window, and forbids unsupported
+    years. A new **"What this readout was based on"** section under the readout shows exactly what
+    was sent, so reps can check dates and counts (hidden when printing).
+  - Fixed: the **Leads tab badge** is the number of leads saved for this event; the tab now says so on
+    hover and to screen readers, and the badge is navy instead of alarm-red.
+  - Changed: **contrast.** Primary buttons (Save lead, Unlock, Save attendee list…) are strong teal with
+    white text instead of pale teal, and form-field borders are darker.
+  - Not reproduced: "manual entry shows *QR / barcode scan*". The manual path labels correctly in the
+    test suite; the barcode false-read above is the likely cause (a stray read opened the lead).
 - **v1.14.4** — attendee titles come through; easier-to-grab scrollbar on desktop
   - Fixed: the green **add to leads** button on the Attendees tab left the lead's **Title** blank when
     the attendee file called that column anything other than "Title" (for example "Employment

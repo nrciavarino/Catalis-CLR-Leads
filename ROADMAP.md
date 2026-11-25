@@ -1,6 +1,6 @@
 # Compass Leads — Roadmap
 
-Open backlog as of **v1.14.0**. Completed work lives in the README changelog.
+Open backlog as of **v1.14.5**. Completed work lives in the README changelog.
 
 **Lift scale (1–5):** 1 = a few lines or a small UI tweak; 2 = a contained feature reusing
 existing patterns; 3 = new data shape or a new screen; 4 = multi-part feature, new integration,
@@ -41,7 +41,7 @@ application." They are known and documented here rather than hidden.
 |---|---|---|
 | Move AI calls behind a server-side proxy | 3 | Each rep's own Anthropic API key currently lives in their browser's `localStorage` and calls go direct from the browser. A proxy (e.g. a Cloud Function) would hold one company key, enable usage limits and logging, and keep keys off devices. |
 | Real authentication and per-role access rules | 4 | Auth is anonymous sign-in: any device that loads the app can read and write everything, and there is no per-user identity or audit trail. Company SSO (e.g. Microsoft Entra via Firebase Auth) plus role-scoped rules would fix this. The Setup PIN is a client-side deterrent only and becomes moot. |
-| Tests, CI, and a build/deploy pipeline | 3 | There is currently none. At minimum: linting, a smoke test of the scan → review → save flow, and automated deploy. |
+| Tests, CI, and a build/deploy pipeline | 3 | A headless Playwright regression suite now exists in `tests/` (stubbed Firestore; run by hand). Still missing: running it automatically on every push, linting, real-device camera/barcode coverage, and automated deploy. |
 | Self-host or bundle third-party libraries; add integrity hashes | 2 | Libraries load from public CDNs at runtime (cdnjs, unpkg, gstatic). A blocked or compromised CDN degrades or alters the app. |
 | Split `index.html` into modules | 5 | One ~2,800-line file is fine for a solo project and hard for a team to review or test. The React rebuild would cover this. |
 | Version-controlled Firestore indexes (`firestore.indexes.json`) | 1 | Cross-event matching needs three collection-group indexes that are currently created by hand (README Setup step 7). |

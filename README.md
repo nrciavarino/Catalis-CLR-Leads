@@ -305,6 +305,23 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.14.3** — any rep can edit any event note
+  - Changed: event notes are team-editable. Any rep can edit any note (text and tag); an edit by
+    someone other than the author shows "edited by <name>" with the time. Only the author can
+    delete their own note. No rules change.
+- **v1.14.2** — notes can be edited, alphabetical lists, tidier attendee buttons
+  - Added: **edit an event note.** A rep can edit their own notes (text and tag) from Events →
+    Details; edited notes show "edited" with the time. Other reps' notes stay read-only, same
+    honor-system rule as delete.
+  - Changed: **lists are alphabetical.** The Current software and Reason for engagement pick-lists
+    (and their Setup manage lists), the attendee table (default: last name, then first name; a
+    column-header sort still overrides it) and the Leads list (default: A–Z by last name). The Leads
+    list has a per-device **Sort** control to switch back to *Newest first*. CSV export, analytics
+    and the AI readout still use newest-first order. Fixed tail options in the software list
+    ("Catalis (existing customer)", "Homegrown…", "Paper…", "Other…") stay at the bottom, and the
+    Events list stays newest-first.
+  - Changed: the bottom **Save attendee list** button only shows once the list has records, like
+    Remove. The top Save stays so a first row can still be added to an empty list.
 - **v1.14.1** — attendee list buttons at the top
   - Changed: **Save attendee list** and **Remove entire attendee list** now sit at the top of the
     Attendees tab (below the upload card). With a large list (850+ rows) they were only reachable
@@ -317,7 +334,7 @@ manually replace `index.html` on the host.
     on `qualFields`. No new indexes are needed.
   - Added: **Event notes.** Events tab → **Details** on any event. Short, tagged (Schedule / Venue /
     Setup / Staffing / Lesson learned), time-stamped, attributed notes — one document each, so two
-    reps adding at once never overwrite each other. A rep can delete only their own notes. Notes
+    reps adding at once never overwrite each other. Any rep can edit a note; only its author can delete it. Notes
     are included in the AI event readout.
   - Added: **Per-event qualification questions.** Same Details screen. Single choice, multiple
     choice, Yes/No or free text; mark any as required; reorder, rename, edit choices, archive

@@ -360,6 +360,8 @@
 
   <div class="view" id="view-leads">
     <h2 class="section-title">Leads for this event</h2>
+    <div class="row" style="margin-bottom:8px;align-items:center;gap:8px;"><label for="leadSortSel" class="hint" style="margin:0;">Sort</label>
+      <select id="leadSortSel" style="flex:0 1 auto;width:auto;" aria-label="Sort leads"><option value="az">A–Z by last name</option><option value="recent">Newest first</option></select></div>
     <div class="card" style="padding:10px 12px;"><input type="text" id="leadSearch" placeholder="Search leads by name or company…" aria-label="Search leads by name or company"></div>
     <div class="row wrap" style="margin:8px 0 14px;">
       <span class="badge badge-brass" id="leadCountBadge">0 leads</span>
@@ -438,7 +440,7 @@
     </div>
     <!-- Bottom copy of Save so a long list doesn't need a scroll back up; the real
          Save and Remove buttons live at the top (v1.14.1). -->
-    <button class="btn btn-primary btn-block" onclick="document.getElementById('btnSaveAttendees').click()">Save attendee list</button>
+    <button class="btn btn-primary btn-block" id="btnSaveAttendeesBottom" style="display:none;" onclick="document.getElementById('btnSaveAttendees').click()">Save attendee list</button>
   </div>
 
   <div class="view" id="view-events">
@@ -650,7 +652,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.14.1'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.14.3'; // bump this on every shipped change so it's obvious whether a device is up to date
 const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
@@ -888,6 +890,7 @@ const State = {
   setupUnlocked: false, // session-only (not persisted) — see renderSecurityCard(); a fresh page load always re-locks if a PIN is set
   reviewReturnTab: 'scan', // which tab the review screen returns to on Back/Cancel/Save — set in openReview(), so editing from Leads lands back on Leads
   repCard: safeJSONParse(localStorage.getItem(LS_REP_CARD), null) || {title:'', company:'', email:'', phone:''}, // the rep's own card fields for "share my card" (backlog #8) — name comes from workerName
+  editingNoteId: null, noteDraft: null,
   detailEventId: null, unsubNotes: null, eventNotes: [], // event-detail screen (v1.14.0)
   showArchivedEvents: false, // per-tab-open UI toggle (not persisted) — see renderEventsList()
 };
@@ -896,11 +899,14 @@ const State = {
 const DEFAULT_COMPETITORS = ['Tyler Technologies','Journal Technologies','Fidlar Technologies','Simplifile'];
 const SOFTWARE_FIXED_TAIL = ['Catalis (existing customer)','Homegrown / in-house system','Paper / no system','Other — see notes'];
 const DEFAULT_ENGAGEMENT_REASONS = ['Saw a demo','Existing Customer','Interested in Learning more','Drawing registrant'];
+// Every pick-list in the app is kept alphabetical (case-insensitive, natural number order).
+function alphaSort(arr){ return arr.slice().sort((a,b) => String(a).localeCompare(String(b), undefined, {sensitivity:'base', numeric:true})); }
+function lastNameKey(full){ const t = String(full||'').trim().split(/\s+/); const last = t.length > 1 ? t[t.length-1] : (t[0]||''); return (last + ' ' + t.slice(0,-1).join(' ')).toLowerCase(); }
 function subscribeCompetitors(){
   if(State.unsubCompetitors){ State.unsubCompetitors(); State.unsubCompetitors = null; }
   State.unsubCompetitors = State.db.collection('meta').doc('competitors').onSnapshot(doc => {
     if(doc.exists && Array.isArray(doc.data().list)){
-      State.competitors = doc.data().list;
+      State.competitors = alphaSort(doc.data().list);
     } else {
       State.competitors = DEFAULT_COMPETITORS.slice();
       State.db.collection('meta').doc('competitors').set({list: State.competitors}).catch(()=>{});
@@ -925,7 +931,7 @@ document.getElementById('btnAddCompetitor').onclick = async () => {
   const v = input.value.trim();
   if(!v) return;
   if(State.competitors.some(c => c.toLowerCase()===v.toLowerCase())){ toast('Already in the list'); input.value=''; return; }
-  State.competitors.push(v);
+  State.competitors = alphaSort(State.competitors.concat([v]));
   input.value = '';
   await State.db.collection('meta').doc('competitors').set({list: State.competitors});
 };
@@ -940,7 +946,7 @@ function subscribeEngagementReasons(){
   if(State.unsubEngagementReasons){ State.unsubEngagementReasons(); State.unsubEngagementReasons = null; }
   State.unsubEngagementReasons = State.db.collection('meta').doc('engagementReasons').onSnapshot(doc => {
     if(doc.exists && Array.isArray(doc.data().list)){
-      State.engagementReasons = doc.data().list;
+      State.engagementReasons = alphaSort(doc.data().list);
     } else {
       State.engagementReasons = DEFAULT_ENGAGEMENT_REASONS.slice();
       State.db.collection('meta').doc('engagementReasons').set({list: State.engagementReasons}).catch(()=>{});
@@ -965,7 +971,7 @@ document.getElementById('btnAddEngagementReason').onclick = async () => {
   const v = input.value.trim();
   if(!v) return;
   if(State.engagementReasons.some(r => r.toLowerCase()===v.toLowerCase())){ toast('Already in the list'); input.value=''; return; }
-  State.engagementReasons.push(v);
+  State.engagementReasons = alphaSort(State.engagementReasons.concat([v]));
   input.value = '';
   await State.db.collection('meta').doc('engagementReasons').set({list: State.engagementReasons});
 };
@@ -1635,8 +1641,12 @@ function sortAttendees(key){
 }
 function sortedAttendees(){
   const {key, dir} = State.attendeeSort;
-  if(!key) return State.attendees;
   const list = State.attendees.slice();
+  if(!key){
+    // Default view: alphabetical by last name, then first name.
+    list.sort((a, b) => String(a.lastName||'').localeCompare(String(b.lastName||''), undefined, {sensitivity:'base'}) || String(a.firstName||'').localeCompare(String(b.firstName||''), undefined, {sensitivity:'base'}));
+    return list;
+  }
   list.sort((a, b) => {
     const av = String(a[key] || '').toLowerCase(), bv = String(b[key] || '').toLowerCase();
     if(av < bv) return dir === 'asc' ? -1 : 1;
@@ -1661,6 +1671,7 @@ function renderAttendeeTable(){
   }).join('') + `<th scope="col"><span class="sr-only">Row actions</span></th>`;
   const noMatch = document.getElementById('attendeeNoMatch');
   document.getElementById('btnClearAttendees').style.display = State.attendees.length ? '' : 'none'; // nothing to remove on an empty list
+  document.getElementById('btnSaveAttendeesBottom').style.display = State.attendees.length ? '' : 'none'; // the bottom Save only earns its place under a long list
   const countEl = document.getElementById('attendeeSearchCount');
   if(!State.attendees.length){ tbody.innerHTML=''; empty.style.display='block'; noMatch.style.display='none'; countEl.style.display='none'; updateStickyOffsets(); return; }
   empty.style.display = 'none';
@@ -1897,6 +1908,14 @@ function findExistingLead(name, excludeKey){
 function allLeadsSorted(){
   return Object.entries(State.leads).map(([key,lead]) => Object.assign({_key:key}, lead)).sort((a,b) => (b.savedAt||0)-(a.savedAt||0));
 }
+// The on-screen Leads list defaults to A–Z by last name (v1.14.2); exports, analytics and the
+// readout keep using allLeadsSorted() (newest first). A per-device toggle brings back newest-first.
+function leadsForList(){
+  const list = allLeadsSorted();
+  if((localStorage.getItem('compassleads.leadSort') || 'az') === 'recent') return list;
+  return list.sort((a,b) => lastNameKey(a.name).localeCompare(lastNameKey(b.name), undefined, {sensitivity:'base', numeric:true}));
+}
+document.addEventListener('change', e => { if(e.target && e.target.id === 'leadSortSel'){ try{ localStorage.setItem('compassleads.leadSort', e.target.value); }catch(_){} renderLeadsList(); } });
 function updateLeadTabCount(){
   const n = Object.keys(State.leads).length;
   const el = document.getElementById('tabCountLeads');
@@ -1905,7 +1924,9 @@ function updateLeadTabCount(){
 function renderLeadsList(){
   const wrap = document.getElementById('leadsListWrap');
   const q = norm(document.getElementById('leadSearch').value);
-  let leads = allLeadsSorted();
+  let leads = leadsForList();
+  const sortSel = document.getElementById('leadSortSel');
+  if(sortSel) sortSel.value = localStorage.getItem('compassleads.leadSort') || 'az';
   const missing = leads.filter(l => !l.email && !l.phone).length;
   document.getElementById('leadCountBadge').textContent = leads.length + (leads.length===1?' lead':' leads');
   const missingBadge = document.getElementById('leadMissingBadge');
@@ -3138,7 +3159,7 @@ async function fetchEventNotes(eventId){
 function openEventDetail(id){
   const ev = State.events.find(e => e.id === id);
   if(!ev) return;
-  State.detailEventId = id;
+  State.detailEventId = id; State.editingNoteId = null; State.noteDraft = null;
   document.getElementById('evDetailTitle').textContent = ev.name + ' — details';
   document.getElementById('evNoteText').value = '';
   if(State.unsubNotes){ State.unsubNotes(); State.unsubNotes = null; }
@@ -3154,19 +3175,27 @@ function openEventDetail(id){
 }
 function closeEventDetail(){
   if(State.unsubNotes){ State.unsubNotes(); State.unsubNotes = null; }
-  State.detailEventId = null;
+  State.detailEventId = null; State.editingNoteId = null; State.noteDraft = null;
   switchTab('events');
 }
 function renderEventNotes(){
   const wrap = document.getElementById('evNotesList');
   const notes = State.eventNotes || [];
   if(!notes.length){ wrap.innerHTML = '<p class="hint" style="margin:8px 0;">No notes yet for this event.</p>'; return; }
-  wrap.innerHTML = notes.map(n => `
+  wrap.innerHTML = notes.map(n => State.editingNoteId === n.id ? `
+    <div class="card" style="padding:10px 12px;margin-bottom:8px;">
+      <textarea id="evNoteEditText" maxlength="2000" aria-label="Edit note" oninput="State.noteDraft=this.value">${esc(State.noteDraft != null ? State.noteDraft : n.text)}</textarea>
+      <div class="row" style="gap:8px;margin-top:8px;">
+        <select id="evNoteEditTag" aria-label="Note tag" style="flex:1;">${['','Schedule','Venue','Setup','Staffing','Lesson learned'].map(t => `<option value="${t}"${t===(n.tag||'')?' selected':''}>${t||'No tag'}</option>`).join('')}</select>
+        <button class="btn btn-primary btn-sm" onclick="saveEventNoteEdit('${n.id}')">Save</button>
+        <button class="btn btn-outline btn-sm" onclick="cancelEventNoteEdit()">Cancel</button>
+      </div>
+    </div>` : `
     <div class="card" style="padding:10px 12px;margin-bottom:8px;">
       <div style="white-space:pre-wrap;word-break:break-word;">${esc(n.text)}</div>
       <div class="row between wrap" style="margin-top:6px;">
-        <div class="hint">${n.tag ? `<span class="badge badge-gray">${esc(n.tag)}</span> ` : ''}${esc(n.author)||'Unknown'} · ${fmtTime(n.createdAt)}</div>
-        ${n.author === State.workerName ? `<button class="btn btn-danger btn-sm" onclick="deleteEventNote('${n.id}')">Delete</button>` : ''}
+        <div class="hint">${n.tag ? `<span class="badge badge-gray">${esc(n.tag)}</span> ` : ''}${esc(n.author)||'Unknown'} · ${fmtTime(n.createdAt)}${n.editedAt ? ' · edited' + (n.editedBy && n.editedBy !== n.author ? ' by ' + esc(n.editedBy) : '') + ' ' + fmtTime(n.editedAt) : ''}</div>
+        <span class="row" style="gap:6px;"><button class="btn btn-outline btn-sm" onclick="editEventNote('${n.id}')">Edit</button>${n.author === State.workerName ? `<button class="btn btn-danger btn-sm" onclick="deleteEventNote('${n.id}')">Delete</button>` : ''}</span>
       </div>
     </div>`).join('');
 }
@@ -3185,6 +3214,19 @@ document.getElementById('btnAddEvNote').onclick = async () => {
   }catch(err){ console.error(err); toast('Could not save the note — check connection'); }
   btn.disabled = false;
 };
+// Any rep can edit any note (shared team notes); only the author can delete. Edits record who/when.
+function editEventNote(noteId){ State.editingNoteId = noteId; State.noteDraft = null; renderEventNotes(); const t = document.getElementById('evNoteEditText'); if(t){ t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+function cancelEventNoteEdit(){ State.editingNoteId = null; State.noteDraft = null; renderEventNotes(); }
+async function saveEventNoteEdit(noteId){
+  const text = (document.getElementById('evNoteEditText').value || '').trim();
+  if(!text){ toast('A note can\'t be empty — use Delete to remove it'); return; }
+  try{
+    await State.db.collection('events').doc(State.detailEventId).collection('notes').doc(noteId).set({
+      text: text.slice(0, 2000), tag: document.getElementById('evNoteEditTag').value || '', editedAt: Date.now(), editedBy: State.workerName || 'Unknown',
+    }, {merge:true});
+    State.editingNoteId = null; State.noteDraft = null; renderEventNotes(); toast('Note updated');
+  }catch(err){ console.error(err); toast('Could not save the edit — check connection'); }
+}
 async function deleteEventNote(noteId){
   if(!confirm('Delete this note?')) return;
   try{ await State.db.collection('events').doc(State.detailEventId).collection('notes').doc(noteId).delete(); }

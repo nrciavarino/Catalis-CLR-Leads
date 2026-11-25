@@ -305,6 +305,12 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.14.1** — attendee list buttons at the top
+  - Changed: **Save attendee list** and **Remove entire attendee list** now sit at the top of the
+    Attendees tab (below the upload card). With a large list (850+ rows) they were only reachable
+    after scrolling the whole table. A second Save button remains at the bottom.
+  - Changed: web contact search failures now say why (HTTP status plus a hint) and are logged under
+    Setup → API key; the retry button label matches what is missing.
 - **v1.14.0** — event notes, per-event qualification questions, smarter contact lookup
   - **Republish `firestore.rules` BEFORE deploying this version.** It adds a rule for the new
     `events/{id}/notes` subcollection (the deny-all backstop blocks it otherwise) and a size cap

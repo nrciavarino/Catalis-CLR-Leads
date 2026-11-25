@@ -1,6 +1,6 @@
 # Compass Leads — Roadmap
 
-Open backlog as of **v1.15.2**. Completed work lives in the README changelog.
+Open backlog as of **v1.15.3**. Completed work lives in the README changelog.
 
 **Lift scale (1–5):** 1 = a few lines or a small UI tweak; 2 = a contained feature reusing
 existing patterns; 3 = new data shape or a new screen; 4 = multi-part feature, new integration,
@@ -8,6 +8,8 @@ or needs research; 5 = architectural change or a large rebuild. Estimates are ro
 ordering, not scheduling.
 
 ## Feature backlog
+
+Shipped in v1.15.3 and removed from this list: the manual-entry button on the Scan screen and deleting a qualification question that no lead has answered.
 
 Shipped in v1.14.0 and removed from this list: event-level notes, per-event qualification fields,
 and the web contact search for a lead missing only an email or phone. Possible follow-ons: a

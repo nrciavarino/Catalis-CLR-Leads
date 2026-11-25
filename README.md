@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.15.2` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.15.3` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -304,6 +304,29 @@ manually replace `index.html` on the host.
   them), that's worth knowing before turning this on, not after.
 
 ## Changelog
+
+- **v1.15.3** — layout fixes from real-phone screenshots, plus deleting unused questions
+  - Changed: **"+ Enter manually" now sits beside "No QR — take photo"** on the Scan screen, so it is
+    reachable without scrolling. The old full-width button at the bottom is gone.
+  - Added: **Delete a qualification question** (Events → Details). It checks the event's leads in
+    Firestore first and refuses if any lead has answered it ("N leads have answered this question…
+    Archive it instead"); otherwise it asks for confirmation and removes the question. The check and
+    the delete are separate steps, so an answer saved by another rep in that same second could be
+    orphaned — it stays on the lead but no longer appears in the form or CSV. Archive remains the
+    safe choice for anything that might have answers.
+  - Fixed: the **✕ remove button on the Attendees tab was cut in half** at the right edge (the actions
+    column was too narrow for two buttons); the column is wider.
+  - Changed: **event cards are laid out the same way** whether the event is active, inactive or
+    archived: a three-across button grid on a phone (five-across on wider screens) instead of a ragged
+    row with Delete orphaned on its own line.
+  - Changed: **Upload CSV is one button.** The browser's unstyled "Choose File / No file chosen"
+    control is hidden; the button opens the chooser.
+  - Changed: **checkboxes and radios use the Catalis teal** (`#1F7A6F`), not the browser's default
+    blue, and the **text-size slider** has a light track with a teal fill and a clear thumb (Android
+    Chrome drew the unfilled part almost black).
+  - Changed: the **"an iPhone on silent stays quiet" note** next to the beep setting only appears on an
+    iPhone or iPad.
+  - No data, rules or index changes.
 
 - **v1.15.2** — hint text looks like hints
   - Changed: **placeholder (hint) text is dimmer** everywhere — `#8A9BAC` on white, `#AB827C` on a

@@ -1,6 +1,6 @@
 # Compass Leads — Roadmap
 
-Open backlog as of **v1.15.3**. Completed work lives in the README changelog.
+Open backlog as of **v1.15.4**. Completed work lives in the README changelog.
 
 **Lift scale (1–5):** 1 = a few lines or a small UI tweak; 2 = a contained feature reusing
 existing patterns; 3 = new data shape or a new screen; 4 = multi-part feature, new integration,
@@ -8,6 +8,8 @@ or needs research; 5 = architectural change or a large rebuild. Estimates are ro
 ordering, not scheduling.
 
 ## Feature backlog
+
+Shipped in v1.15.4 (QA pass): manual-entry duplicate check, field length limits and text wrapping, manual contact source, live-region toast, CSV byte-order mark.
 
 Shipped in v1.15.3 and removed from this list: the manual-entry button on the Scan screen and deleting a qualification question that no lead has answered.
 
@@ -27,6 +29,16 @@ missing (see the follow-up queue).
 | Broader contact enrichment | 3 | Beyond the existing `.gov` / county-directory web search. |
 | Jurisdiction intelligence card | 3 | Needs a data-source decision first. |
 | Booth traffic co-pilot | 3 | Depends on which signals it should read. |
+| QA follow-ups: duplicate event-name warning, "no leads match" empty state, rewrite the connect-gate error | 1 | From the v1.15.3 QA review (QA-08, 09, 10). Copy and small checks only. |
+| Draft autosave and Back-button handling on the review form | 3 | Refresh or browser Back mid-entry currently loses the lead. Needs a draft in localStorage and a history entry for the review screen. |
+| Accessibility pass: attendee input labels, keyboard-operable sort headers, modal focus, contrast, 44 px touch targets | 3 | From the QA review (QA-05, 06, 11, 12, 13). Darkening btn-teal and outline borders is the cheap part. |
+| Responsive polish: Attendees tab page-level horizontal scroll at 768 and 1280 px, header crowding at 320 px | 1 | From the v1.15.3 QA review (QA-15, 16). Put the attendee grid in its own scroll wrapper and truncate the event pill in the header. |
+| Replace native `prompt()` dialogs for renaming events, questions and choices | 2 | QA-17. Native dialogs look out of place and are awkward on phones. Reuse the existing modal pattern with an inline text field. |
+| Readout error messages and stale toasts | 1 | QA-18. Tell a missing API key apart from a rejected one, and clear any old toast before showing a new one. |
+| Question-label length feedback and non-ASCII export filenames | 1 | QA-19. Labels over 120 characters are cut silently; show a counter. Event names with accents become underscores in the CSV filename; transliterate instead. |
+| Keyboard focus order and skip link | 1 | QA-14. The tab bar comes before the header in the DOM, and focus drops to the page body once. |
+| Large-event performance: virtualize or paginate the Leads list | 3 | Measured at 600 leads: render 84 ms but about 9,650 DOM nodes (no virtualization). A 2,000+ lead event may be slow on older phones. Re-measure on a real phone first; attendee-list and memory-leak runs were not completed. |
+| Real-device QA checklist run before each release | 1 | Untested in the QA pass: camera scan, torch, CSV import edge cases (empty file, BOM, semicolon delimiter, duplicate headers, wrong file type), real Firestore offline and concurrency, real AI calls, Firefox, Safari and Edge. |
 | AI-assisted note capture | 4 | |
 | Follow-up message / e-card correspondence | 4 | Needs research before scoping. The AI-draft-in-Mail half is now its own item above. |
 | NFC / RFID badge reading | 4 | Android-only (Web NFC); not available on iOS. |

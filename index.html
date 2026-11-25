@@ -231,6 +231,7 @@
 
   .lead-item{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;}
   .lead-item .top{display:flex;justify-content:space-between;gap:8px;}
+  .lead-item .top > div{min-width:0;overflow-wrap:anywhere;}
   .lead-item .name{font-weight:700;font-size:calc(15px * var(--text-scale));}
   .lead-item .meta{font-size:calc(12.5px * var(--text-scale));color:var(--ink-soft);margin-top:2px;}
   .lead-item .actions{display:flex;gap:6px;margin-top:8px;}
@@ -298,7 +299,7 @@
   .modal-box h3{margin:0 0 6px;font-size:18px;color:var(--navy);}
   .modal-box p{margin:0 0 16px;font-size:13.5px;color:var(--ink-soft);line-height:1.4;}
 
-  .toast{position:fixed;bottom:calc(var(--tab-h) + 14px);left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 18px;border-radius:11px;font-size:13.5px;box-shadow:var(--shadow-lg);z-index:200;opacity:0;transition:opacity .25s ease, transform .25s ease;pointer-events:none;max-width:88%;text-align:center;}
+  .toast{position:fixed;bottom:calc(var(--tab-h) + 14px);left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 18px;border-radius:11px;font-size:13.5px;box-shadow:var(--shadow-lg);z-index:200;opacity:0;transition:opacity .25s ease, transform .25s ease;pointer-events:none;max-width:88%;text-align:center;overflow-wrap:anywhere;word-break:break-word;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
 
   .overlay-loading{position:absolute;inset:0;background:rgba(22,35,63,.85);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border-radius:var(--radius);z-index:5;}
@@ -384,13 +385,13 @@
     <div id="pipeFixArea"></div>
     <div id="contactAlertArea"></div>
     <div class="card">
-      <div class="field"><label class="field-label" for="f_name">Full name *</label><input type="text" id="f_name" name="cl-lead-fullname" placeholder="Jordan Rivera" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
+      <div class="field"><label class="field-label" for="f_name">Full name *</label><input type="text" id="f_name" maxlength="120" name="cl-lead-fullname" placeholder="Jordan Rivera" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
       <div class="row row-stack-phone">
-        <div class="field grow"><label class="field-label" for="f_company">Company / Agency</label><input type="text" id="f_company" name="cl-lead-org" placeholder="County Probation Dept." autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
-        <div class="field grow"><label class="field-label" for="f_title">Title</label><input type="text" id="f_title" name="cl-lead-role" placeholder="Program Director" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
+        <div class="field grow"><label class="field-label" for="f_company">Company / Agency</label><input type="text" id="f_company" maxlength="120" name="cl-lead-org" placeholder="County Probation Dept." autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
+        <div class="field grow"><label class="field-label" for="f_title">Title</label><input type="text" id="f_title" maxlength="120" name="cl-lead-role" placeholder="Program Director" autocomplete="off" autocapitalize="words" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
       </div>
-      <div class="field" id="f_email_wrap"><label class="field-label" for="f_email">Email</label><input type="text" inputmode="email" id="f_email" name="cl-lead-mail" placeholder="name@agency.gov" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
-      <div class="field" id="f_phone_wrap"><label class="field-label" for="f_phone">Phone</label><input type="text" inputmode="tel" id="f_phone" name="cl-lead-tel" placeholder="(555) 555-0100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
+      <div class="field" id="f_email_wrap"><label class="field-label" for="f_email">Email</label><input type="text" inputmode="email" id="f_email" maxlength="254" name="cl-lead-mail" placeholder="name@agency.gov" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
+      <div class="field" id="f_phone_wrap"><label class="field-label" for="f_phone">Phone</label><input type="text" inputmode="tel" id="f_phone" maxlength="40" name="cl-lead-tel" placeholder="(555) 555-0100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
       <div class="field"><label class="field-label" for="f_reason">Reason for engagement</label>
         <select id="f_reason"><option value="">— not specified —</option></select>
       </div>
@@ -398,7 +399,7 @@
         <select id="f_software"><option value="">— not asked / not mentioned —</option></select>
       </div>
       <div id="qualArea"></div>
-      <div class="field"><label class="field-label" for="f_notes">Notes</label><textarea id="f_notes" name="cl-lead-notes" autocomplete="off" placeholder="Interested in Benchmark integration…"></textarea></div>
+      <div class="field"><label class="field-label" for="f_notes">Notes</label><textarea id="f_notes" maxlength="2000" name="cl-lead-notes" autocomplete="off" placeholder="Interested in Benchmark integration…"></textarea></div>
       <div class="hint" id="f_source">Source: manual entry</div>
     </div>
     <div id="qualIncompleteBox"></div>
@@ -499,7 +500,7 @@
     </div>
     <div id="eventsListWrap"></div>
     <div class="card">
-      <div class="field"><label class="field-label" for="newEventName">New event name</label><input type="text" id="newEventName" placeholder="APPA 2026 Conference"></div>
+      <div class="field"><label class="field-label" for="newEventName">New event name</label><input type="text" id="newEventName" maxlength="120" placeholder="APPA 2026 Conference"></div>
       <button class="btn btn-primary btn-block" id="btnAddEvent">+ Add event</button>
     </div>
   </div>
@@ -667,7 +668,7 @@
   </div>
 </div>
 
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Blocking setup gate shown until a Firebase config is saved -->
 <div id="setupGate" role="dialog" aria-modal="true" aria-labelledby="setupGateHeading">
@@ -716,7 +717,7 @@
    Runs as a normal static site — host it anywhere over HTTPS.
    ========================================================================= */
 
-const APP_VERSION = 'v1.15.3'; // bump this on every shipped change so it's obvious whether a device is up to date
+const APP_VERSION = 'v1.15.4'; // bump this on every shipped change so it's obvious whether a device is up to date
 const LS_LASTAIERR = 'compassleads.lastAiError'; // last AI failure on THIS phone, shown under Setup \u2192 API key (iOS has no console to read)
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6'; // single place to change the model for every AI feature (badge OCR, web contact lookup, event readout)
 document.getElementById('workerLabelTop').textContent = APP_VERSION;
@@ -1559,7 +1560,7 @@ async function unarchiveEvent(id){
 async function renameEvent(id){
   const ev = State.events.find(e => e.id === id);
   if(!ev) return;
-  const newName = (prompt('Rename event', ev.name) || '').trim();
+  const newName = (prompt('Rename event', ev.name) || '').trim().slice(0,120);
   if(!newName || newName === ev.name) return;
   await State.db.collection('events').doc(id).set({name: newName}, {merge:true});
   toast('Event renamed');
@@ -2465,14 +2466,14 @@ async function exportCsv(forceDownload){
   const filename = 'compass-leads-'+(evName||'export').replace(/[^\w-]+/g,'_')+'-'+new Date().toISOString().slice(0,10)+'.csv';
   if(!forceDownload && canShareCsvFile()){
     try{
-      await navigator.share({files:[new File([csv], filename, {type:'text/csv'})], title: 'Compass Leads export'});
+      await navigator.share({files:[new File(['\uFEFF' + csv], filename, {type:'text/csv'})], title: 'Compass Leads export'});
       toast('CSV shared'); return;
     }catch(err){
       if(err && err.name === 'AbortError') return; // the rep closed the share sheet — not an error
       console.warn('share failed, falling back to download', err);
     }
   }
-  const blob = new Blob([csv], {type:'text/csv'});
+  const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
@@ -3054,6 +3055,7 @@ function openReview(lead, existingKey){
         <div style="flex:1;">Already scanned by ${esc(d.scannedBy)||'someone'} (${fmtTime(d.savedAt)}) as "${esc(d.name)}".
         <button class="btn btn-outline btn-sm" style="margin-top:6px;" onclick="editLead('${dupe.key}')">Edit that lead instead</button></div>`;
       matchArea.appendChild(dupeDiv);
+      State.pendingLead._dupShown = true;
     }
   }
   updateContactAlert();
@@ -3334,6 +3336,26 @@ async function saveLead(allowIncomplete){
     const first = document.querySelector('#qualArea .qual-missing'); if(first) first.scrollIntoView({block:'center',behavior:'smooth'});
     return;
   }
+  // v1.15.4: manual entries open with no name, so the open-time duplicate banner never ran for them.
+  // Check again at save (name, or same email) unless this is an edit or the rep already saw/dismissed a warning.
+  if(State.pendingLead && !State.pendingLead._existingKey && !State.pendingLead._dupShown && !State.pendingLead._dupOk){
+    let dupe = findExistingLead(name);
+    if(!dupe && email){
+      const em = email.toLowerCase();
+      const hit = Object.entries(State.leads).find(([k,l]) => (l.email||'').trim().toLowerCase() === em);
+      if(hit) dupe = {key: hit[0], lead: hit[1]};
+    }
+    if(dupe){
+      const d = dupe.lead;
+      box.innerHTML = `<div class="alert-box"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="#B4432F" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+      <div style="flex:1;"><b>Looks like a duplicate.</b> ${esc(d.scannedBy)||'Someone'} already saved "${esc(d.name)}" (${fmtTime(d.savedAt)}).
+      <div class="row wrap" style="margin-top:8px;gap:8px;"><button class="btn btn-outline btn-sm" id="btnDupEdit">Edit that lead instead</button><button class="btn btn-danger btn-sm" id="btnDupSaveAnyway">Save as new lead</button></div></div></div>`;
+      document.getElementById('btnDupEdit').onclick = () => editLead(dupe.key);
+      document.getElementById('btnDupSaveAnyway').onclick = () => { State.pendingLead._dupOk = true; saveLead(allowIncomplete); };
+      box.scrollIntoView({block:'center',behavior:'smooth'});
+      return;
+    }
+  }
   box.innerHTML = '';
   const lead = {
     name, company: document.getElementById('f_company').value.trim(), title: document.getElementById('f_title').value.trim(),
@@ -3347,7 +3369,7 @@ async function saveLead(allowIncomplete){
     currentSoftware: document.getElementById('f_software').value,
     reasonForEngagement: document.getElementById('f_reason').value,
     qual,
-    contactSource: (State.pendingLead && State.pendingLead.contactSource) || (email||phone ? 'badge' : ''),
+    contactSource: (State.pendingLead && State.pendingLead.contactSource) || (email||phone ? (((State.pendingLead && State.pendingLead.source) || 'manual') === 'manual' ? 'manual' : 'badge') : ''),
     source: (State.pendingLead && State.pendingLead.source) || 'manual',
     matched: !!(State.pendingLead && State.pendingLead.matched),
     webSearchAttempted: !!(State.pendingLead && State.pendingLead.webSearchAttempted),
@@ -3360,7 +3382,7 @@ async function saveLead(allowIncomplete){
     const col = State.db.collection('events').doc(State.activeEventId).collection('leads');
     if(State.pendingLead && State.pendingLead._existingKey) await col.doc(State.pendingLead._existingKey).set(lead);
     else await col.add(lead);
-    toast('Lead saved: ' + name);
+    toast('Lead saved: ' + (name.length > 60 ? name.slice(0,57) + '…' : name));
     closeReview();
   }catch(err){
     console.error(err);

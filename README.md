@@ -7,7 +7,7 @@ a phone browser, no app install required.
 Built for a single conference booth used by multiple reps at once; every phone reads and writes
 the same live data.
 
-**Current version:** `v1.15.3` (shown in the app's header and Setup tab — always check this
+**Current version:** `v1.15.4` (shown in the app's header and Setup tab — always check this
 matches what's in this repo before assuming a device is up to date)
 
 ---
@@ -305,6 +305,17 @@ manually replace `index.html` on the host.
 
 ## Changelog
 
+- **v1.15.4** — fixes from a pre-release QA pass
+  - Fixed: **typing the same person in by hand twice no longer slips through.** Manual entries now get
+    the duplicate check when you tap Save (same name, or same email as an existing lead), with
+    "Edit that lead instead" or "Save as new lead". Scanned leads keep their existing banner.
+  - Fixed: **Contact Source says "manual"** instead of "badge" for leads typed in by hand.
+  - Fixed: **very long text no longer breaks the screen.** Name, company and title are capped at 120
+    characters, email 254, phone 40, notes 2,000, event name 120. Long text that already exists wraps
+    in the Leads list, and the save confirmation shortens long names.
+  - Fixed: **screen readers now announce** save confirmations and errors (the toast is a live region).
+  - Fixed: **the CSV now opens correctly in Excel** with accented names (UTF-8 byte-order mark added;
+    Salesforce import is unaffected).
 - **v1.15.3** — layout fixes from real-phone screenshots, plus deleting unused questions
   - Changed: **"+ Enter manually" now sits beside "No QR — take photo"** on the Scan screen, so it is
     reachable without scrolling. The old full-width button at the bottom is gone.

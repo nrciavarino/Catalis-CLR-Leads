@@ -26,7 +26,7 @@ with sync_playwright() as p:
     pg.route('**/*', route)
     pg.goto('file://'+__import__('os').path.abspath('../index.html'))
     pg.wait_for_function("typeof State!=='undefined' && State.db && State.events.length>0", timeout=8000)
-    ok('app boots at v1.14.5', pg.evaluate("APP_VERSION")=='v1.14.5')
+    ok('app boots at v1.15.0', pg.evaluate("APP_VERSION")=='v1.15.0')
 
     # ---- Stage 1: partial-contact web search ----
     pg.evaluate("openReview({name:'Pat Jones',company:'Lee County',title:'Clerk',email:'pat@lee.gov',phone:'',notes:'',source:'manual'}, 'k1')")
@@ -152,7 +152,7 @@ with sync_playwright() as p:
     ok('Active-event switch swaps question set', pg.locator('#qualArea [data-qid]').count()==1 and 'budget cycle' in pg.inner_text('#qualArea').lower())
     pg.evaluate("closeReview()")
 
-    # ---- v1.14.5 additions ----
+    # ---- v1.15.0 additions ----
     pg.evaluate("setActiveEvent('ev1')"); pg.wait_for_timeout(200)
     pg.evaluate("openEventDetail('ev1')"); pg.wait_for_timeout(150)
     own = pg.evaluate("State.eventNotes.find(n=>n.author==='Nic').id")
@@ -188,7 +188,7 @@ with sync_playwright() as p:
     order2 = pg.evaluate("[...document.querySelectorAll('.lead-item .name')].map(e=>e.textContent)")
     ok('A leads toggle to newest first', order2[0]=='Zoe Baker', order2)
 
-    # ---- v1.14.5: title from differently-labelled attendee column ----
+    # ---- v1.15.0: title from differently-labelled attendee column ----
     def title_key(labels):
         return pg.evaluate("(l)=>{State.attendeeColumns=CANONICAL_COLS.concat(l.map(x=>({key:x.toLowerCase().replace(/[^a-z0-9]+/g,'_'),label:x})));return attendeeTitleKey();}", labels)
     ok('T "Employment Title" recognised', title_key(['City Name','Employment Title'])=='employment_title')
@@ -208,7 +208,7 @@ with sync_playwright() as p:
     ok('T badge title is never overwritten', pg.input_value('#f_title')=='County Clerk')
     pg.evaluate("closeReview()")
 
-    # ---- v1.14.5: QA findings ----
+    # ---- v1.15.0: QA findings ----
     pg.evaluate("setActiveEvent('ev1')"); pg.wait_for_timeout(200); pg.evaluate("switchTab('scan')")
     pg.click("text=+ Enter a lead manually"); pg.wait_for_timeout(150)
     ok('Q1 manual entry is labelled manual', pg.inner_text('#f_source')=='Source: manual entry')
@@ -249,6 +249,57 @@ with sync_playwright() as p:
     # self test
     pg.evaluate("switchTab('setup')"); pg.click('#btnScannerSelfTest'); pg.wait_for_function("document.getElementById('selfTestOut').innerText.includes('Environment')", timeout=8000)
     ok('Q4 scanner self-test runs and reports', 'Secure page' in pg.inner_text('#selfTestOut') and pg.locator('#btnSelfTestCopy').is_visible())
+
+    # ---- v1.15.0: sticky save, autofill, torch, feedback, share ----
+    pg.evaluate("setActiveEvent('ev1')"); pg.wait_for_timeout(200)
+    pg.evaluate("openReview(null)")
+    ok('4a Save bar is sticky', pg.evaluate("getComputedStyle(document.querySelector('.sticky-save')).position")=='sticky')
+    attrs = pg.evaluate("['f_name','f_company','f_title','f_email','f_phone'].map(id=>{const e=document.getElementById(id);return [e.getAttribute('autocomplete'),e.type,e.getAttribute('name')]})")
+    ok('4b lead fields have autocomplete off + unique names', all(a[0]=='off' and a[2].startswith('cl-lead-') for a in attrs), attrs)
+    ok('4b email/phone use text type with the right keyboard', pg.evaluate("[document.getElementById('f_email').type,document.getElementById('f_email').inputMode,document.getElementById('f_phone').type,document.getElementById('f_phone').inputMode]")==['text','email','text','tel'])
+    pg.fill('#f_email','not-an-email'); pg.evaluate("document.getElementById('f_email').dispatchEvent(new Event('blur'))")
+    ok('4b validation still flags a bad email (no type=email needed)', pg.is_visible('#f_email_err'))
+    pg.evaluate("closeReview()")
+    # torch
+    pg.evaluate("""(()=>{window.__torchCalls=[];const v=document.getElementById('camVideo');
+      const track={getCapabilities:()=>({torch:true}),applyConstraints:async c=>{window.__torchCalls.push(JSON.stringify(c))}};
+      Object.defineProperty(v,'srcObject',{configurable:true,get:()=>({getVideoTracks:()=>[track]})});refreshTorchButton();})()""")
+    ok('5a torch button shows when the camera supports it', pg.is_visible('#btnTorch') or pg.evaluate("document.getElementById('btnTorch').style.display")=='')
+    pg.evaluate("document.getElementById('btnTorch').click()"); pg.wait_for_timeout(100)
+    ok('5a torch on sends the torch constraint', any('"torch":true' in c for c in pg.evaluate("window.__torchCalls")) and 'on' in pg.inner_text('#btnTorch').lower())
+    pg.evaluate("turnTorchOff()"); pg.wait_for_timeout(100)
+    ok('5a pausing the camera turns the torch off', any('"torch":false' in c for c in pg.evaluate("window.__torchCalls")))
+    pg.evaluate("Object.defineProperty(document.getElementById('camVideo'),'srcObject',{configurable:true,get:()=>null}); refreshTorchButton()")
+    ok('5a torch button hides without support', pg.evaluate("document.getElementById('btnTorch').style.display")=='none')
+    # feedback
+    pg.evaluate("""(()=>{window.__vib=[];navigator.vibrate=(n)=>{window.__vib.push(n);return true;};window.__osc=0;
+      audioCtx={currentTime:0,state:'running',createOscillator:()=>{window.__osc++;return {frequency:{},connect(){},start(){},stop(){}}},createGain:()=>({gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}}),destination:{}};})()""")
+    pg.evaluate("localStorage.removeItem('compassleads.fbHaptic'); localStorage.removeItem('compassleads.fbSound'); scanFeedback()")
+    ok('5c scan feedback vibrates and beeps by default', pg.evaluate("window.__vib.length")==1 and pg.evaluate("window.__osc")==1)
+    pg.evaluate("localStorage.setItem('compassleads.fbHaptic','0'); localStorage.setItem('compassleads.fbSound','0'); scanFeedback()")
+    ok('5c toggles switch each off', pg.evaluate("window.__vib.length")==1 and pg.evaluate("window.__osc")==1)
+    pg.evaluate("localStorage.removeItem('compassleads.fbHaptic'); localStorage.removeItem('compassleads.fbSound')")
+    ok('5c a successful scan triggers feedback', (pg.evaluate("lastQrAt=0; State.pendingLead=null; onQrDetected('A B | Dir | Co'); window.__vib.length")==2))
+    pg.evaluate("closeReview()")
+    # share
+    pg.evaluate("""(()=>{window.__shared=[];const mm=window.matchMedia.bind(window);window.matchMedia=q=>String(q).includes('pointer: coarse')?{matches:true}:mm(q);
+      navigator.canShare=()=>true;navigator.share=async d=>{window.__shared.push(d);};})()""")
+    pg.evaluate("switchTab('leads')"); pg.wait_for_timeout(100)
+    dl_count = {'n':0}; pg.on('download', lambda d: dl_count.__setitem__('n', dl_count['n']+1))
+    pg.evaluate("exportCsv(false)"); pg.wait_for_timeout(300)
+    ok('6 phone export opens the share sheet with a .csv file', pg.evaluate("window.__shared.length")==1 and pg.evaluate("window.__shared[0].files[0].name").endswith('.csv') and dl_count['n']==0)
+    pg.evaluate("window.__shared=[]; navigator.share=async()=>{const e=new Error('x');e.name='AbortError';throw e;}; 0")
+    pg.evaluate("exportCsv(false)"); pg.wait_for_timeout(300)
+    ok('6 cancelling the share sheet does not download', dl_count['n']==0)
+    pg.evaluate("navigator.share=async()=>{throw new Error('boom')}; 0")
+    pg.evaluate("exportCsv(false)"); pg.wait_for_timeout(400)
+    ok('6 a failed share falls back to download', dl_count['n']==1)
+    pg.evaluate("exportCsv(true)"); pg.wait_for_timeout(400)
+    ok('6 "download instead" always downloads', dl_count['n']==2)
+    pg.evaluate("window.__shared=[]; navigator.share=async d=>{window.__shared.push(d)}; 0; State.lastReadoutPrompt='p'; renderReadoutSuccess('Readout body')")
+    ok('6 readout has a Share button', pg.locator('#btnReadoutShare').count()==1)
+    pg.evaluate("document.getElementById('btnReadoutShare').click()"); pg.wait_for_timeout(150)
+    ok('6 readout share sends the text', pg.evaluate("window.__shared.length")==1 and 'Readout body' in pg.evaluate("window.__shared[0].text"))
     b.close()
 bad=[r for r in results if not r[1]]
 print(f"\n{len(results)-len(bad)}/{len(results)} passed"); print('errors:', [e for e in errs if 'net::ERR' not in e and 'Failed to load resource' not in e][:8])
